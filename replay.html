@@ -125,6 +125,7 @@
     <div class="help">
       <kbd>→</kbd> 한 봉 · <kbd>Shift</kbd>+<kbd>→</kbd> 10봉 · <kbd>←</kbd> 한 봉 뒤로 · <kbd>스페이스</kbd> 재생/멈춤<br>
       <kbd>B</kbd> 롱 · <kbd>S</kbd> 숏 · <kbd>X</kbd> 청산 (지금 보이는 마지막 1분봉 종가 기준)<br>
+      거래량 막대: 초록 = 시장가 매수 체결, 빨강 = 시장가 매도 체결(바이낸스 체결 기록 기준. 업비트 종목은 구분 없이 한 색).<br>
       시각은 모두 KST. 시작 시각 뒤의 봉은 숨겨져 있고, 3분·5분·15분·1시간 봉은 공개된 1분봉까지만 묶어서 그립니다.
       포지션 크기 = 증거금 × 레버리지. 손익 = 포지션 크기 × 가격 변동% − 수수료(진입·청산 각각 포지션 크기 × 편도 수수료).
       ROE% = 손익 ÷ 증거금. 격리 마진처럼 손실이 증거금에 닿으면 강제 청산으로 처리합니다(유지증거금은 빼고 계산해서 실제 거래소보다 조금 늦게 청산됩니다).
@@ -168,6 +169,8 @@ const candle = chart.addCandlestickSeries({
 });
 const volume = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol' });
 chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+// 매수 체결량(시장가 매수, 테이커 매수). 전체 거래량 막대(빨강=매도 부분) 위에 아래부터 초록으로 겹쳐 그린다.
+const buyVol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false });
 candle.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.22 } });
 
 // 단순 이동평균선(SMA). 기간은 '지금 보는 봉' 기준 개수(5분봉이면 5분봉 25개).
@@ -306,7 +309,7 @@ function parseCsv(text) {
     const r = lines[i].split(',');
     if (r.length < 8) continue;
     if (i < 300) { const dp = (r[5].split('.')[1] || '').replace(/0+$/, '').length; decimals = Math.max(decimals, dp); }
-    out.push({ t: +r[1], o: +r[2], h: +r[3], l: +r[4], c: +r[5], v: +r[6], qv: +r[7] });
+    out.push({ t: +r[1], o: +r[2], h: +r[3], l: +r[4], c: +r[5], v: +r[6], qv: +r[7], bv: r.length > 8 && r[8] !== '' ? +r[8] : null });
   }
   out.decimals = decimals;
   return out;
@@ -362,7 +365,7 @@ function setBars(b, m) {
   $('startAt').min = utcToKstInput(bars[0].t);
   $('startAt').max = utcToKstInput(lastT);
   cursor = -1; agg = []; pend = null;
-  candle.setData([]); volume.setData([]); MAS.forEach((m) => m.series.setData([]));
+  candle.setData([]); volume.setData([]); buyVol.setData([]); MAS.forEach((m) => m.series.setData([]));
   renderTrades(); renderInfo();
   $('info').innerHTML = `<span><b>${meta.symbol}</b> <span class="dim">${meta.market} · ${fmtKst(bars[0].t)} ~ ${fmtKst(lastT)} (KST) 읽음</span></span><span class="dim">시작 시각을 정하고 [여기서 시작]을 누르세요. 달 끝에 가면 다음 달이 자동으로 이어집니다.</span>`;
 }
@@ -383,7 +386,7 @@ async function loadSecFile(e) {
     const rows = [];
     for (const line of (await fetchText('data/' + e.file)).split(/\r?\n/).slice(1)) {
       const r = line.split(',');
-      if (r.length >= 7) rows.push({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], qv: +r[6] });
+      if (r.length >= 7) rows.push({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], qv: +r[6], bv: r.length > 7 && r[7] !== '' ? +r[7] : null });
     }
     secCache.set(e.file, rows);
     if (secCache.size > 4) secCache.delete(secCache.keys().next().value);   // 최근 며칠만 기억
@@ -400,7 +403,7 @@ function secondsOfMinute(arr, minT) {
 function nowT() { return pend && pend.k > 0 ? pend.list[pend.k - 1].t : bars[cursor].t; }
 function pushLast() {
   const last = agg[agg.length - 1];
-  candle.update(toCandle(last)); volume.update(toVol(last));
+  candle.update(toCandle(last)); volume.update(toVol(last)); buyVol.update(toBuy(last));
   updateMaLast();
 }
 function revealSecond() {
@@ -433,6 +436,7 @@ function rebuild() {
   if (pend) for (let k = 0; k < pend.k; k++) addToAgg(pend.list[k]);
   candle.setData(agg.map(toCandle));
   volume.setData(agg.map(toVol));
+  buyVol.setData(agg.map(toBuy));
   setMaData();
   renderMarkers();
 }
@@ -441,12 +445,16 @@ function addToAgg(b) {
   const last = agg[agg.length - 1];
   if (last && last.t === k) {
     last.h = Math.max(last.h, b.h); last.l = Math.min(last.l, b.l); last.c = b.c; last.v += b.v; last.qv += b.qv;
+    last.bv = last.bv == null || b.bv == null ? null : last.bv + b.bv;
   } else {
-    agg.push({ t: k, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, qv: b.qv });
+    agg.push({ t: k, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, qv: b.qv, bv: b.bv == null ? null : b.bv });
   }
 }
 const toCandle = (a) => ({ time: a.t + KST_OFF, open: a.o, high: a.h, low: a.l, close: a.c });
-const toVol = (a) => ({ time: a.t + KST_OFF, value: a.v, color: a.c >= a.o ? 'rgba(38,166,154,.45)' : 'rgba(239,83,80,.45)' });
+// 매수 체결량이 있으면: 전체 막대 = 빨강(매도), 그 위에 아래부터 초록(매수). 없으면(업비트·예전 파일) 봉 방향 색 한 가지.
+const toVol = (a) => ({ time: a.t + KST_OFF, value: a.v,
+  color: a.bv != null ? 'rgba(239,83,80,.55)' : (a.c >= a.o ? 'rgba(38,166,154,.45)' : 'rgba(239,83,80,.45)') });
+const toBuy = (a) => (a.bv != null ? { time: a.t + KST_OFF, value: a.bv, color: 'rgba(38,166,154,.75)' } : { time: a.t + KST_OFF });
 
 function revealOne() {                 // 1분봉 하나 공개
   if (pend) {                           // 1초씩 보던 분이 있으면 그 분의 나머지를 마저 채운다
@@ -522,6 +530,10 @@ function renderLegend(i) {
     `<span class="k">저</span><span class="${c}">${fmtP(a.l)}</span> <span class="k">종</span><span class="${c}">${fmtP(a.c)}</span> ` +
     `${chg} <span class="k">시가→종가</span> <span class="${cls(body)}">${sgn(body)}%</span> ` +
     `<span class="k">고저폭</span> <span class="dim">${range.toFixed(2)}%</span> <span class="k">거래대금</span> <span class="dim">${fmtBig(a.qv)} ${meta.quote}</span>` +
+    (a.bv != null && a.v > 0
+      ? `<span class="k">매수 체결</span> <span class="up">${fmtBig(a.bv)}</span> <span class="k">매도 체결</span> <span class="down">${fmtBig(a.v - a.bv)}</span>` +
+        ` <span class="k">매수 비율</span> <span class="${a.bv / a.v >= 0.5 ? 'up' : 'down'}">${(a.bv / a.v * 100).toFixed(1)}%</span>`
+      : '') +
     '<div>' + MAS.filter((m) => m.series.options().visible).map((m) => {
       const v = smaAt(i, m.n);
       return `<span class="k">MA${m.n}</span> <span style="color:${m.color}">${v == null ? '-' : fmtP(v)}</span>`;

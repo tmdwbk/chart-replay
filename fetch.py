@@ -90,7 +90,7 @@ def parse_binance_zip(zip_bytes, expected_sha256, workdir):
                 t = int(rec[0])
                 if t > 10**14:  # 마이크로초로 오는 경우
                     t //= 1000
-                rows.append((t // 1000, rec[1], rec[2], rec[3], rec[4], rec[5], rec[7]))
+                rows.append((t // 1000, rec[1], rec[2], rec[3], rec[4], rec[5], rec[7], rec[9] if len(rec) > 9 else ""))
     zpath.unlink()
     return rows
 
@@ -239,7 +239,7 @@ def fetch_upbit(market, start_utc, end_utc):
             if s <= t < e:
                 rows[t] = (t, c["opening_price"], c["high_price"], c["low_price"],
                            c["trade_price"], c["candle_acc_trade_volume"],
-                           c["candle_acc_trade_price"])
+                           c["candle_acc_trade_price"], "")  # 업비트 캔들에는 매수·매도 구분이 없음
         if calls % 20 == 0:
             log(f"  {datetime.fromtimestamp(oldest, KST):%Y-%m-%d %H:%M} (KST) 까지 받음…")
         if oldest <= s:
@@ -318,14 +318,16 @@ def binance_seconds_utc_day(symbol, d, workdir):
                         t //= 1000
                     sec = t // 1000
                     px = float(rec[1]); q = float(rec[2])
+                    buy = q if len(rec) > 6 and rec[6].strip().lower() == "false" else 0.0  # 사는 쪽이 시장가(테이커) = 매수 체결
                     b = secs.get(sec)
                     if b is None:
-                        secs[sec] = [rec[1], px, px, rec[1], q, px * q]
+                        secs[sec] = [rec[1], px, px, rec[1], q, px * q, buy]
                     else:
                         if px > b[1]: b[1] = px
                         if px < b[2]: b[2] = px
-                        b[3] = rec[1]; b[4] += q; b[5] += px * q
+                        b[3] = rec[1]; b[4] += q; b[5] += px * q; b[6] += buy
     zpath.unlink()
+    time.sleep(0.3)  # 공개 서버에 몰아서 받지 않게
     if len(_SEC_CACHE) >= 2:
         _SEC_CACHE.pop(min(_SEC_CACHE))
     _SEC_CACHE[d] = secs
@@ -338,10 +340,9 @@ def save_seconds(symbol, kst_day, rows):
     tmp = path.with_name(path.name + ".tmp")
     with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
         w = csv.writer(f)
-        w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume"])
-        for sec, (o, h, l, c, v, qv) in rows:
-            w.writerow([sec, o, repr(h) if isinstance(h, float) else h, repr(l) if isinstance(l, float) else l, c,
-                        f"{v:.12g}", f"{qv:.4f}"])
+        w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
+        for sec, (o, h, l, c, v, qv, bv) in rows:
+            w.writerow([sec, o, repr(h), repr(l), c, f"{v:.12g}", f"{qv:.4f}", f"{bv:.12g}"])
     os.replace(tmp, path)
     sub = path.parent / "index.json"
     idx = json.loads(sub.read_text()) if sub.exists() else []
@@ -399,9 +400,9 @@ def save(rows, symbol, source, market_label, quote, start_d, end_d):
     tmp = path.with_name(path.name + ".tmp")
     with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
         w = csv.writer(f)
-        w.writerow(["time_kst", "ts_utc", "open", "high", "low", "close", "volume", "quote_volume"])
-        for t, o, h, l, c, v, qv in rows:
-            w.writerow([datetime.fromtimestamp(t, KST).strftime("%Y-%m-%d %H:%M"), t, o, h, l, c, v, qv])
+        w.writerow(["time_kst", "ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
+        for t, o, h, l, c, v, qv, bv in rows:
+            w.writerow([datetime.fromtimestamp(t, KST).strftime("%Y-%m-%d %H:%M"), t, o, h, l, c, v, qv, bv])
     os.replace(tmp, path)
 
     sub_index = path.parent / "index.json"
@@ -490,11 +491,28 @@ def main():
                     help="긴 기간을 달마다 따로 저장 (리플레이 화면이 가벼워짐)")
     ap.add_argument("--all", action="store_true",
                     help="상장부터 어제까지 전체를 달마다 받기. 이미 받은 지난달 파일은 건너뜀(다시 돌리면 새 달만 추가)")
+    ap.add_argument("--force", action="store_true",
+                    help="--all 과 함께: 이미 받은 달도 다시 받기 (예: 매수 체결량 칸 추가)")
     ap.add_argument("--seconds", action="store_true",
                     help="1초봉(1분봉이 만들어지는 과정 보기용). 바이낸스 선물 체결 내역을 하루씩 받아 줄임. 끝 날짜를 빼면 하루만")
     a = ap.parse_args()
 
     if a.seconds:
+        if a.all:
+            base = normalize_symbol(a.symbol)
+            base = base if base.endswith("USDT") else base + "USDT"
+            bsym = sd = None
+            for c in ([base] if base.startswith("1000") else [base, "1000" + base]):
+                first = binance_first_month(c)
+                if first:
+                    bsym, sd = c, first
+                    break
+            if not bsym:
+                sys.exit("바이낸스 선물에 없는 종목이라 1초봉을 만들 수 없어요.")
+            ed = datetime.now(KST).date() - timedelta(days=1)
+            log(f"{bsym} 1초봉 전체 {sd} ~ {ed} (KST). 이미 받은 날은 건너뜀. 원본이 커서 오래 걸려요(중간에 끊겨도 다시 돌리면 이어서).")
+            fetch_seconds(bsym, sd, ed)
+            return
         if not a.start:
             sys.exit("1초봉은 날짜를 적어 주세요. 예: python3 fetch.py PEPEUSDT.P 2024-03-05 --seconds")
         try:
@@ -503,7 +521,7 @@ def main():
         except ValueError:
             sys.exit("날짜는 2026-10-01 같은 모양으로 적어 주세요.")
         if (ed - sd).days > 31:
-            sys.exit("1초봉은 원본이 커서 한 번에 31일까지만 받아요.")
+            sys.exit("1초봉은 원본이 커서 한 번에 31일까지만 받아요. 전체는 --seconds --all")
         bsym = resolve_binance_symbol(normalize_symbol(a.symbol), *kst_range(sd, ed))
         if not bsym:
             sys.exit("바이낸스 선물에 없는 종목이라 1초봉을 만들 수 없어요(업비트 종목은 지원 안 함).")
@@ -545,7 +563,7 @@ def main():
         if bsym:
             chunks = month_chunks(start_d, end_d) if monthly else [(start_d, end_d)]
             total = run_chunks(chunks, lambda s, e: fetch_binance(bsym, s, e), bsym, "binance",
-                               "바이낸스 USDT-M 무기한 선물", "USDT", skip_done=a.all)
+                               "바이낸스 USDT-M 무기한 선물", "USDT", skip_done=a.all and not a.force)
             log(f"완료: 새로 받은 1분봉 {total:,}개 ({DATA_DIR / bsym})")
             return
         log("바이낸스 선물 아카이브에 이 종목(또는 이 기간)이 없어요.")
@@ -563,7 +581,7 @@ def main():
         start_d = date(2017, 10, 1)  # 업비트 원화 마켓 시작. 상장 전 달은 빈 응답 한 번으로 넘어감
     chunks = month_chunks(start_d, end_d) if monthly else [(start_d, end_d)]
     total = run_chunks(chunks, lambda s, e: fetch_upbit(market, s, e), market, "upbit",
-                       "업비트 원화 현물 (선물 아님)", "KRW", skip_done=a.all)
+                       "업비트 원화 현물 (선물 아님)", "KRW", skip_done=a.all and not a.force)
     if not total and not a.all:
         sys.exit(f"업비트에서도 {market} 데이터를 찾지 못했어요.")
     log(f"완료: 새로 받은 1분봉 {total:,}개")
