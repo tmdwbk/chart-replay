@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.tmp
+screenshot*.png
+screenshot*.jpg
+data/
