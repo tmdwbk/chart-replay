@@ -58,6 +58,12 @@
   <input type="datetime-local" id="startAt" step="60">
   <button class="primary" id="btnStart">여기서 시작</button>
   <div class="sep"></div>
+  <label class="dim" title="이동평균선 보이기/숨기기">
+    <input type="checkbox" class="maToggle" data-i="0" checked><span style="color:#FF9800">MA25</span>
+    <input type="checkbox" class="maToggle" data-i="1" checked><span style="color:#4CAF50">MA50</span>
+    <input type="checkbox" class="maToggle" data-i="2" checked><span style="color:#F23645">MA200</span>
+  </label>
+  <div class="sep"></div>
   <label>봉</label>
   <select id="tf">
     <option value="1">1분</option><option value="3">3분</option><option value="5" selected>5분</option>
@@ -162,6 +168,43 @@ const candle = chart.addCandlestickSeries({
 const volume = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol' });
 chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 candle.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.22 } });
+
+// 단순 이동평균선(SMA). 기간은 '지금 보는 봉' 기준 개수(5분봉이면 5분봉 25개).
+// 공개된 봉(agg)만으로 계산하고, 만드는 중인 마지막 봉은 넘길 때마다 다시 계산한다.
+const MAS = [
+  { n: 25, color: '#FF9800', width: 1 },   // 주황, 가장 얇게
+  { n: 50, color: '#4CAF50', width: 1 },   // 초록, 가장 얇게
+  { n: 200, color: '#F23645', width: 2 },  // 빨강, 조금 더 굵게
+];
+for (const m of MAS) {
+  m.series = chart.addLineSeries({ color: m.color, lineWidth: m.width, priceLineVisible: false, lastValueVisible: false,
+    crosshairMarkerVisible: false, priceScaleId: 'right' });
+}
+function smaAt(i, n) {                    // agg[i] 까지 n 개 종가 평균. 봉이 모자라면 null
+  if (i + 1 < n) return null;
+  let sum = 0;
+  for (let k = i - n + 1; k <= i; k++) sum += agg[k].c;
+  return sum / n;
+}
+function setMaData() {
+  for (const m of MAS) {
+    const out = [];
+    let sum = 0;
+    for (let i = 0; i < agg.length; i++) {
+      sum += agg[i].c;
+      if (i >= m.n) sum -= agg[i - m.n].c;
+      if (i + 1 >= m.n) out.push({ time: agg[i].t + KST_OFF, value: sum / m.n });
+    }
+    m.series.setData(out);
+  }
+}
+function updateMaLast() {
+  const i = agg.length - 1;
+  for (const m of MAS) {
+    const v = smaAt(i, m.n);
+    if (v != null) m.series.update({ time: agg[i].t + KST_OFF, value: v });
+  }
+}
 
 // ---------------------------------------------------------------- 도구
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -269,6 +312,7 @@ function parseCsv(text) {
 function setPrecision(dec) {
   precision = Math.min(Math.max(dec, 0), 8);
   candle.applyOptions({ priceFormat: { type: 'price', precision, minMove: Math.pow(10, -precision) } });
+  MAS.forEach((m) => m.series.applyOptions({ priceFormat: { type: 'price', precision, minMove: Math.pow(10, -precision) } }));
 }
 
 let loadSeq = 0;
@@ -316,7 +360,7 @@ function setBars(b, m) {
   $('startAt').min = utcToKstInput(bars[0].t);
   $('startAt').max = utcToKstInput(lastT);
   cursor = -1; agg = [];
-  candle.setData([]); volume.setData([]);
+  candle.setData([]); volume.setData([]); MAS.forEach((m) => m.series.setData([]));
   renderTrades(); renderInfo();
   $('info').innerHTML = `<span><b>${meta.symbol}</b> <span class="dim">${meta.market} · ${fmtKst(bars[0].t)} ~ ${fmtKst(lastT)} (KST) 읽음</span></span><span class="dim">시작 시각을 정하고 [여기서 시작]을 누르세요. 달 끝에 가면 다음 달이 자동으로 이어집니다.</span>`;
 }
@@ -327,6 +371,7 @@ function rebuild() {
   for (let i = 0; i <= cursor; i++) addToAgg(bars[i]);
   candle.setData(agg.map(toCandle));
   volume.setData(agg.map(toVol));
+  setMaData();
   renderMarkers();
 }
 function addToAgg(b) {
@@ -348,6 +393,7 @@ function revealOne() {                 // 1분봉 하나 공개
   checkLiq(bars[cursor]);
   const last = agg[agg.length - 1];
   candle.update(toCandle(last)); volume.update(toVol(last));
+  updateMaLast();
   return true;
 }
 function stepUnit() {                  // 넘기는 단위만큼 공개
@@ -407,7 +453,11 @@ function renderLegend(i) {
     `<span class="k">시</span><span class="${c}">${fmtP(a.o)}</span> <span class="k">고</span><span class="${c}">${fmtP(a.h)}</span> ` +
     `<span class="k">저</span><span class="${c}">${fmtP(a.l)}</span> <span class="k">종</span><span class="${c}">${fmtP(a.c)}</span> ` +
     `${chg} <span class="k">시가→종가</span> <span class="${cls(body)}">${sgn(body)}%</span> ` +
-    `<span class="k">고저폭</span> <span class="dim">${range.toFixed(2)}%</span> <span class="k">거래대금</span> <span class="dim">${fmtBig(a.qv)} ${meta.quote}</span>`;
+    `<span class="k">고저폭</span> <span class="dim">${range.toFixed(2)}%</span> <span class="k">거래대금</span> <span class="dim">${fmtBig(a.qv)} ${meta.quote}</span>` +
+    '<div>' + MAS.filter((m) => m.series.options().visible).map((m) => {
+      const v = smaAt(i, m.n);
+      return `<span class="k">MA${m.n}</span> <span style="color:${m.color}">${v == null ? '-' : fmtP(v)}</span>`;
+    }).join(' ') + '</div>';
 }
 chart.subscribeCrosshairMove((p) => {
   const ok = p && p.point && p.logical != null && p.logical >= 0 && p.logical < agg.length;
@@ -583,6 +633,10 @@ function togglePlay() { timer ? stopPlay() : startPlay(); }
 // ---------------------------------------------------------------- 이벤트
 $('symbol').onchange = (e) => { if (e.target.value) pickSymbol(e.target.value); e.target.blur(); };
 $('month').onchange = (e) => { loadMonth(+e.target.value); e.target.blur(); };
+document.querySelectorAll('.maToggle').forEach((cb) => cb.onchange = () => {
+  MAS[+cb.dataset.i].series.applyOptions({ visible: cb.checked });
+  renderLegend(null); cb.blur();
+});
 $('btnDir').onclick = () => $('dirInput').click();
 $('dirInput').onchange = async (e) => {
   const files = [...e.target.files];
