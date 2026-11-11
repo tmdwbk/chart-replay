@@ -268,6 +268,123 @@ def rebuild_index():
             pass
     entries.sort(key=lambda x: (x["symbol"], x["start"]))
     _write_json(DATA_DIR / "index.json", entries)
+    secs = []
+    for sub in sorted(DATA_DIR.glob("*/sec/index.json")):
+        try:
+            secs.extend(json.loads(sub.read_text()))
+        except ValueError:
+            pass
+    secs.sort(key=lambda x: (x["symbol"], x["day"]))
+    _write_json(DATA_DIR / "sec_index.json", secs)
+
+
+# ---------------------------------------------------------------- 1초봉 (1분봉이 만들어지는 과정 보기용)
+# 바이낸스 선물 체결 내역(aggTrades, 공개 아카이브)을 하루씩 받아 1초 단위 시고저종·거래량으로 묶는다.
+# 체결 내역 원본은 크다(페페 하루 15~100MB 압축). 1초봉으로 줄이면 하루 1MB 안팎.
+
+_SEC_CACHE = {}  # UTC 날짜 → {초: [o,h,l,c,v,qv]} (KST 하루가 UTC 이틀에 걸쳐서 바로 다음 날에 다시 씀)
+
+
+def binance_seconds_utc_day(symbol, d, workdir):
+    """UTC 하루치 aggTrades → 1초봉 dict. 파일이 없으면 None."""
+    if d in _SEC_CACHE:
+        return _SEC_CACHE[d]
+    fname = f"{symbol}-aggTrades-{d.isoformat()}.zip"
+    url = f"{BINANCE_ROOT}/daily/aggTrades/{symbol}/{fname}"
+    chk = binance_get(url + ".CHECKSUM")
+    if chk is None:
+        return None
+    log(f"  체결 내역 {d} (UTC) 받는 중…")
+    data = binance_get(url)
+    if data is None:
+        return None
+    if hashlib.sha256(data).hexdigest() != chk.decode().split()[0].strip().lower():
+        raise RuntimeError("체크섬이 맞지 않습니다. 파일이 깨졌을 수 있어요.")
+    zpath = workdir / "agg.zip"
+    zpath.write_bytes(data)
+    del data
+    secs = {}
+    with zipfile.ZipFile(zpath) as zf:
+        for name in zf.namelist():
+            if not name.endswith(".csv") or "/" in name or "\\" in name or ".." in name:
+                continue
+            with zf.open(name) as raw:
+                for line in io.TextIOWrapper(raw, encoding="utf-8", errors="replace"):
+                    rec = line.split(",")
+                    if len(rec) < 6 or not rec[0].isdigit():
+                        continue  # 머리글
+                    t = int(rec[5])
+                    if t > 10**14:
+                        t //= 1000
+                    sec = t // 1000
+                    px = float(rec[1]); q = float(rec[2])
+                    b = secs.get(sec)
+                    if b is None:
+                        secs[sec] = [rec[1], px, px, rec[1], q, px * q]
+                    else:
+                        if px > b[1]: b[1] = px
+                        if px < b[2]: b[2] = px
+                        b[3] = rec[1]; b[4] += q; b[5] += px * q
+    zpath.unlink()
+    if len(_SEC_CACHE) >= 2:
+        _SEC_CACHE.pop(min(_SEC_CACHE))
+    _SEC_CACHE[d] = secs
+    return secs
+
+
+def save_seconds(symbol, kst_day, rows):
+    path = DATA_DIR / symbol / "sec" / f"{symbol}_1s_{kst_day:%Y%m%d}.csv.gz"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
+        w = csv.writer(f)
+        w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume"])
+        for sec, (o, h, l, c, v, qv) in rows:
+            w.writerow([sec, o, repr(h) if isinstance(h, float) else h, repr(l) if isinstance(l, float) else l, c,
+                        f"{v:.12g}", f"{qv:.4f}"])
+    os.replace(tmp, path)
+    sub = path.parent / "index.json"
+    idx = json.loads(sub.read_text()) if sub.exists() else []
+    rel = f"{symbol}/sec/{path.name}"
+    idx = [x for x in idx if x["file"] != rel]
+    idx.append({"file": rel, "symbol": symbol, "day": kst_day.isoformat(), "rows": len(rows)})
+    idx.sort(key=lambda x: x["day"])
+    _write_json(sub, idx)
+    rebuild_index()
+    return path
+
+
+def fetch_seconds(symbol, start_d, end_d):
+    workdir = Path(tempfile.mkdtemp(prefix="chart-replay-agg-"))
+    try:
+        d = start_d
+        while d <= end_d:
+            path = DATA_DIR / symbol / "sec" / f"{symbol}_1s_{d:%Y%m%d}.csv.gz"
+            if path.exists():
+                log(f"[{d}] 이미 있어요. 건너뜀.")
+                d += timedelta(days=1)
+                continue
+            log(f"[{d} KST]")
+            s_utc, e_utc = kst_range(d, d)
+            s, e = int(s_utc.timestamp()), int(e_utc.timestamp())
+            rows = []
+            missing = False
+            for ud in (s_utc.date(), (e_utc - timedelta(seconds=1)).date()):
+                secs = binance_seconds_utc_day(symbol, ud, workdir)
+                if secs is None:
+                    log(f"  {ud} (UTC) 체결 파일이 아직 없어요(하루 늦게 올라옴).")
+                    missing = True
+                    continue
+                rows.extend((k, v) for k, v in secs.items() if s <= k < e)
+            if missing or not rows:
+                log("  이 날은 다 받지 못해 저장하지 않았어요.")
+            else:
+                rows.sort()
+                save_seconds(symbol, d, rows)
+                log(f"  저장: 1초봉 {len(rows):,}개 → {path.name}")
+            d += timedelta(days=1)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 def chunk_path(symbol, source, start_d, end_d):
@@ -373,7 +490,26 @@ def main():
                     help="긴 기간을 달마다 따로 저장 (리플레이 화면이 가벼워짐)")
     ap.add_argument("--all", action="store_true",
                     help="상장부터 어제까지 전체를 달마다 받기. 이미 받은 지난달 파일은 건너뜀(다시 돌리면 새 달만 추가)")
+    ap.add_argument("--seconds", action="store_true",
+                    help="1초봉(1분봉이 만들어지는 과정 보기용). 바이낸스 선물 체결 내역을 하루씩 받아 줄임. 끝 날짜를 빼면 하루만")
     a = ap.parse_args()
+
+    if a.seconds:
+        if not a.start:
+            sys.exit("1초봉은 날짜를 적어 주세요. 예: python3 fetch.py PEPEUSDT.P 2024-03-05 --seconds")
+        try:
+            sd = date.fromisoformat(a.start)
+            ed = date.fromisoformat(a.end) if a.end else sd
+        except ValueError:
+            sys.exit("날짜는 2026-10-01 같은 모양으로 적어 주세요.")
+        if (ed - sd).days > 31:
+            sys.exit("1초봉은 원본이 커서 한 번에 31일까지만 받아요.")
+        bsym = resolve_binance_symbol(normalize_symbol(a.symbol), *kst_range(sd, ed))
+        if not bsym:
+            sys.exit("바이낸스 선물에 없는 종목이라 1초봉을 만들 수 없어요(업비트 종목은 지원 안 함).")
+        log(f"{bsym} 1초봉 {sd} ~ {ed} (KST) 를 만듭니다. 하루 원본 15~100MB 를 받아서 줄여요.")
+        fetch_seconds(bsym, sd, ed)
+        return
 
     yesterday = datetime.now(KST).date() - timedelta(days=1)
     if a.all:

@@ -73,6 +73,7 @@
   <select id="unit">
     <option value="tf">보는 봉 하나</option>
     <option value="1m">1분씩 (봉이 만들어지는 과정)</option>
+    <option value="1s">1초씩 (1분봉이 만들어지는 과정 · 1초 데이터 받은 날만)</option>
   </select>
   <div class="sep"></div>
   <button id="btnBack" title="← 한 봉 뒤로">◀</button>
@@ -82,7 +83,7 @@
   <label>속도</label>
   <select id="speed">
     <option value="1">초당 1봉</option><option value="2" selected>초당 2봉</option><option value="4">초당 4봉</option>
-    <option value="8">초당 8봉</option><option value="16">초당 16봉</option><option value="30">초당 30봉</option>
+    <option value="8">초당 8봉</option><option value="16">초당 16봉</option><option value="30">초당 30봉</option><option value="60">초당 60봉</option>
   </select>
 </div>
 
@@ -259,6 +260,7 @@ async function fetchText(url) {           // .csv.gz 면 브라우저에서 압�
 
 async function loadIndex() {
   try { index = JSON.parse(await fetchText('data/index.json')); } catch (e) { index = []; }
+  try { secIndex = JSON.parse(await fetchText('data/sec_index.json')); } catch (e) { secIndex = []; }
   const sel = $('symbol');
   sel.innerHTML = '';
   if (!index.length) {
@@ -359,16 +361,76 @@ function setBars(b, m) {
   $('startAt').value = utcToKstInput(Math.min(def, lastT));
   $('startAt').min = utcToKstInput(bars[0].t);
   $('startAt').max = utcToKstInput(lastT);
-  cursor = -1; agg = [];
+  cursor = -1; agg = []; pend = null;
   candle.setData([]); volume.setData([]); MAS.forEach((m) => m.series.setData([]));
   renderTrades(); renderInfo();
   $('info').innerHTML = `<span><b>${meta.symbol}</b> <span class="dim">${meta.market} · ${fmtKst(bars[0].t)} ~ ${fmtKst(lastT)} (KST) 읽음</span></span><span class="dim">시작 시각을 정하고 [여기서 시작]을 누르세요. 달 끝에 가면 다음 달이 자동으로 이어집니다.</span>`;
 }
 
 // ---------------------------------------------------------------- 공개·집계
+// ---------------------------------------------------------------- 1초봉 (fetch.py --seconds 로 받은 날만)
+// 1초씩 넘기면 다음 1분봉을 1초봉으로 쪼개 하나씩 공개한다. 그 분이 끝나면 cursor 가 그 1분봉으로 넘어간다.
+let secIndex = [];
+const secCache = new Map();               // 파일 → 1초봉 배열 | 'loading'
+let pend = null;                          // 만드는 중인 1분: { list: 그 분의 1초봉들, k: 공개한 개수 }
+let secNote = '';
+const kstDay = (t) => fmtKst(t).slice(0, 10);
+function secEntryFor(t) { return meta && secIndex.find((x) => x.symbol === meta.symbol && x.day === kstDay(t)); }
+async function loadSecFile(e) {
+  if (secCache.has(e.file)) return;
+  secCache.set(e.file, 'loading');
+  try {
+    const rows = [];
+    for (const line of (await fetchText('data/' + e.file)).split(/\r?\n/).slice(1)) {
+      const r = line.split(',');
+      if (r.length >= 7) rows.push({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], qv: +r[6] });
+    }
+    secCache.set(e.file, rows);
+    if (secCache.size > 4) secCache.delete(secCache.keys().next().value);   // 최근 며칠만 기억
+  } catch (err) { console.error(err); secCache.delete(e.file); }
+  renderInfo();
+}
+function secondsOfMinute(arr, minT) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].t < minT) lo = m + 1; else hi = m; }
+  const out = [];
+  for (let i = lo; i < arr.length && arr[i].t < minT + 60; i++) out.push(arr[i]);
+  return out;
+}
+function nowT() { return pend && pend.k > 0 ? pend.list[pend.k - 1].t : bars[cursor].t; }
+function pushLast() {
+  const last = agg[agg.length - 1];
+  candle.update(toCandle(last)); volume.update(toVol(last));
+  updateMaLast();
+}
+function revealSecond() {
+  if (cursor + 1 >= bars.length) return false;
+  if (!pend) {
+    const mb = bars[cursor + 1];
+    const e = secEntryFor(mb.t);
+    if (!e) { secNote = `${kstDay(mb.t)} 은 1초 데이터가 없어 1분씩 넘어가요`; return revealOne(); }
+    const arr = secCache.get(e.file);
+    if (!Array.isArray(arr)) { loadSecFile(e); secNote = '1초 데이터 불러오는 중…'; return false; }
+    secNote = '';
+    const list = secondsOfMinute(arr, mb.t);
+    if (!list.length) return revealOne();            // 그 분에 체결이 없었으면 1분봉 그대로
+    pend = { list, k: 0 };
+  }
+  const sb = pend.list[pend.k++];
+  addToAgg(sb); checkLiq(sb); pushLast();
+  if (pend.k >= pend.list.length) { cursor++; pend = null; }   // 이 분 끝
+  return true;
+}
+function prefetchSec() {                  // 1초 모드일 때 다음 분이 속한 날 파일을 미리 읽어 둔다
+  if ($('unit').value !== '1s' || cursor + 1 >= bars.length) return;
+  const e = secEntryFor(bars[cursor + 1].t);
+  if (e && !secCache.has(e.file)) loadSecFile(e);
+}
+
 function rebuild() {
   agg = [];
   for (let i = 0; i <= cursor; i++) addToAgg(bars[i]);
+  if (pend) for (let k = 0; k < pend.k; k++) addToAgg(pend.list[k]);
   candle.setData(agg.map(toCandle));
   volume.setData(agg.map(toVol));
   setMaData();
@@ -387,17 +449,21 @@ const toCandle = (a) => ({ time: a.t + KST_OFF, open: a.o, high: a.h, low: a.l, 
 const toVol = (a) => ({ time: a.t + KST_OFF, value: a.v, color: a.c >= a.o ? 'rgba(38,166,154,.45)' : 'rgba(239,83,80,.45)' });
 
 function revealOne() {                 // 1분봉 하나 공개
+  if (pend) {                           // 1초씩 보던 분이 있으면 그 분의 나머지를 마저 채운다
+    while (pend.k < pend.list.length) { const sb = pend.list[pend.k++]; addToAgg(sb); checkLiq(sb); }
+    cursor++; pend = null; pushLast();
+    return true;
+  }
   if (cursor + 1 >= bars.length) return false;
   cursor++;
   addToAgg(bars[cursor]);
   checkLiq(bars[cursor]);
-  const last = agg[agg.length - 1];
-  candle.update(toCandle(last)); volume.update(toVol(last));
-  updateMaLast();
+  pushLast();
   return true;
 }
 function stepUnit() {                  // 넘기는 단위만큼 공개
   if (cursor < 0) return false;
+  if ($('unit').value === '1s') return revealSecond();
   if ($('unit').value === '1m' || tfSec === 60) return revealOne();
   // 지금 묶음(봉)을 다 채우거나, 다음 묶음 하나를 다 채울 때까지
   if (!revealOne()) return false;
@@ -409,10 +475,11 @@ function step(n) {
   let moved = false;
   for (let i = 0; i < n; i++) { if (!stepUnit()) break; moved = true; }
   if (!moved && cursor >= bars.length - 1 && (loadedHi + 1 >= months.length) && !loadingNext) { stopPlay(); }
-  maybeLoadNext();
+  maybeLoadNext(); prefetchSec();
   renderInfo(); renderPos();
 }
 function stepBack() {
+  if (pend) { pend = null; rebuild(); renderInfo(); renderPos(); return; }   // 만들던 분의 시작으로
   if (cursor <= 0) return;
   if ($('unit').value === '1m' || tfSec === 60) cursor--;
   else {
@@ -425,6 +492,7 @@ function stepBack() {
 function startAt() {
   if (!bars.length) return;
   stopPlay();
+  pend = null;
   const ts = kstInputToUtc($('startAt').value);
   let i = bars.findIndex((b) => b.t >= ts);
   if (i < 0) i = bars.length - 1;
@@ -467,19 +535,20 @@ chart.subscribeCrosshairMove((p) => {
 function renderInfo() {
   renderLegend(null);
   if (cursor < 0) return;
-  const a = agg[agg.length - 1], b = bars[cursor];
+  const a = agg[agg.length - 1], nt = nowT();
   const ch = (a.c / a.o - 1) * 100;
   const tfName = $('tf').selectedOptions[0].textContent;
   const partial = cursor + 1 < bars.length && bucket(bars[cursor + 1].t) === a.t;
   $('info').innerHTML =
     `<span><b>${meta.symbol}</b> <span class="dim">${meta.market}</span></span>` +
-    `<span>지금 <b>${fmtKst(b.t)}</b> KST</span>` +
+    `<span>지금 <b>${fmtKst(nt)}${pend ? ':' + pad(nt % 60) : ''}</b> KST</span>` +
     `<span>${tfName} 봉 시 ${fmtP(a.o)} 고 ${fmtP(a.h)} 저 ${fmtP(a.l)} 종 <b class="${cls(ch)}">${fmtP(a.c)}</b> <span class="${cls(ch)}">${sgn(ch)}%</span>${partial ? ' <span class="dim">(만드는 중)</span>' : ''}</span>` +
     `<span class="dim">거래대금 ${fmtBig(a.qv)} ${meta.quote}</span>` +
-    `<span class="dim">공개 ${(cursor + 1).toLocaleString()} / ${bars.length.toLocaleString()} (1분봉)</span>`;
+    `<span class="dim">공개 ${(cursor + 1).toLocaleString()} / ${bars.length.toLocaleString()} (1분봉)</span>` +
+    ($('unit').value === '1s' ? `<span class="${secNote ? 'down' : 'up'}">${secNote || (pend ? `1초봉 ${pend.k}/${pend.list.length}` : '1초 모드')}</span>` : '');
 }
 
-function curPrice() { return bars[cursor].c; }
+function curPrice() { return pend && pend.k > 0 ? pend.list[pend.k - 1].c : bars[cursor].c; }
 function pnlPct(side, entry, exit) { return side === 'long' ? (exit / entry - 1) * 100 : (1 - exit / entry) * 100; }
 const usd = (x) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const usdS = (x) => (x > 0 ? '+' : '') + usd(x);
@@ -527,7 +596,7 @@ function renderPos() {
 }
 
 function renderMarkers() {
-  const now = cursor >= 0 ? bars[cursor].t : 0;
+  const now = cursor >= 0 ? nowT() : 0;
   const mk = [];
   const add = (t, side, isEntry, price) => {
     if (t > now) return;
@@ -570,7 +639,7 @@ function enter(side) {
   if (margin <= 0) { flash('증거금을 적어 주세요.'); return; }
   const notional = margin * lev;
   if (margin + notional * fee / 100 > acct.balance + 1e-9) { flash(`잔고가 모자라요. 잔고 ${usd(acct.balance)} (진입 수수료 포함)`); return; }
-  open = { side, entry: curPrice(), t: bars[cursor].t, fee, lev, margin, notional };
+  open = { side, entry: curPrice(), t: nowT(), fee, lev, margin, notional };
   renderMarkers(); renderPos();
 }
 function closePos(forcedPrice) {
@@ -583,7 +652,7 @@ function closePos(forcedPrice) {
   acct.balance = Math.max(0, acct.balance + pnl);
   saveAcct();
   const gross = pnlPct(open.side, open.entry, exit);
-  trades.push({ symbol: meta.symbol, side: open.side, t_in: open.t, entry: open.entry, t_out: bars[cursor].t, exit,
+  trades.push({ symbol: meta.symbol, side: open.side, t_in: open.t, entry: open.entry, t_out: nowT(), exit,
     gross, fee: open.fee, net: pnl / open.notional * 100, lev: open.lev, margin: open.margin, notional: open.notional,
     fees: liq ? r.feeIn : r.feeIn + r.feeOut, pnl, balance: acct.balance, liq });
   open = null;
@@ -662,7 +731,7 @@ $('fileInput').onchange = async (e) => {
 };
 $('btnStart').onclick = startAt;
 $('tf').onchange = (e) => { tfSec = +e.target.value * 60; if (cursor >= 0) { rebuild(); renderInfo(); } e.target.blur(); };
-$('unit').onchange = (e) => e.target.blur();
+$('unit').onchange = (e) => { secNote = ''; prefetchSec(); renderInfo(); e.target.blur(); };
 $('speed').onchange = (e) => { if (timer) startPlay(); e.target.blur(); };
 $('btnStep').onclick = () => step(1);
 $('btnStep10').onclick = () => step(10);
