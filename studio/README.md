@@ -53,7 +53,7 @@ python3 -m pip install --user edge-tts pyyaml
 | `[끝]` | 녹화의 이 시점 이후는 안 씀 |
 | `*단어*` | 자막에서 강조색 |
 | `[강조]` | 줄 전체 강조 + 튀어나오는 효과 + 효과음 |
-| `[줌:x,y]` | 화면의 x%, y% 지점으로 확대 (`[줌]` 만 쓰면 가운데) |
+| `[줌:x,y,배율]` | 화면의 x%, y% 지점을 제자리에 둔 채 확대 (배율 기본 1.4, `[줌]` 만 쓰면 가운데) |
 | `[챕터:이름]` | 화면에 챕터 라벨 + 설명란 챕터 |
 | `[하이라이트]` | 쇼츠에 들어갈 구간 |
 | `[효과음:이름]` | 구간 시작에 효과음 (내장 pop/whoosh/ding 또는 brand.yaml 의 sfx.files) |
@@ -76,3 +76,18 @@ python3 studio/make_video.py ~/Movies/녹화.mov 대본.txt --shorts      # 완�
 - `대본_작업/` 중간 파일. TTS는 여기 저장돼서 대본을 고쳐도 **바뀐 줄만** 다시 만듭니다.
 
 다른 옵션: `--brand 다른채널.yaml`, `--voice ko-KR-SunHiNeural`, `--voice test`(인터넷 없이 점검용 삐- 소리), `--out 폴더`.
+
+## 5. 진행자 SENA
+
+모든 영상의 오른쪽 아래 동그란 화면에 가상 진행자 **SENA**(금발, 아주 흰 피부, 한쪽 눈 안대)가 나와서 설명합니다.
+
+- 입 모양은 TTS 목소리 크기에 맞춰 3단계(다문 입, 반쯤, 크게)로 움직이고, 몇 초마다 눈을 깜빡입니다. 말하는 동안에는 채널색 테두리가 빛납니다.
+- 목소리 기본값은 여성 `ko-KR-SunHiNeural` 입니다.
+- 그림은 `studio/presenter/sena/` 의 PNG 6장(`mouth0~2.png`, `blink0~2.png`)입니다. 다른 그림(직접 그린 일러스트나 AI로 만든 이미지 등)으로 바꾸려면 같은 이름의 정사각형 PNG 6장을 새 폴더에 넣고 `brand.yaml` 의 `presenter.images` 경로만 바꾸면 됩니다. 기본 그림을 수정하려면 `studio/presenter/sena.svg.js` 를 고친 뒤 다시 실행하세요.
+- 끄려면 `presenter: {enabled: false}`.
+
+## 6. 세로 쇼츠 바로 만들기
+
+녹화 영상이 처음부터 세로(9:16)라면 `--brand studio/brand_shorts.yaml` 로 바로 쇼츠를 만듭니다.
+제목은 영상 내내 위에 떠 있고, 자막·SENA·면책 문구는 유튜브 쇼츠의 오른쪽 버튼 줄을 피해서 놓입니다.
+실제 예시 대본: `studio/example/sol_shorts.txt` (솔라나, 바이낸스 현물 2026-11-15 종가 기준).

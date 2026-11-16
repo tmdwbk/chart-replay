@@ -1,0 +1,17 @@
+# 쇼츠(세로 9:16) 전용 설정 — 여기 없는 항목은 brand.yaml 을 그대로 따릅니다.
+# 사용:  python3 studio/make_video.py 세로차트.mp4 대본.txt --brand studio/brand_shorts.yaml
+
+video:
+  width: 1080
+  height: 1920
+
+pacing:
+  max_speed: 3.0        # 쇼츠는 템포를 조금 더 빠르게
+  gap: 0.25
+
+subtitle:
+  box: false
+
+shorts:
+  subtitle_size: 70
+  max_chars: 15

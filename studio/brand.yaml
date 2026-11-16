@@ -27,7 +27,7 @@ video:
 
 voice:
   engine: edge                    # edge = 마이크로소프트 Edge 무료 TTS / test = 인터넷 없이 삐- 소리 (점검용)
-  name: ko-KR-InJoonNeural        # 남성. 여성은 ko-KR-SunHiNeural
+  name: ko-KR-SunHiNeural         # 여성(진행자 SENA). 남성은 ko-KR-InJoonNeural
   rate: "+5%"                     # 말 빠르기
   pitch: "+0Hz"
   volume: "+0%"
@@ -53,6 +53,15 @@ logo:
   width: 180
   opacity: 0.85
   margin: 36
+
+presenter:                        # 화면 오른쪽 아래 동그란 진행자 (가상 캐릭터)
+  enabled: true
+  name: SENA                      # 이름표 글자 ("" 이면 이름표 없음)
+  images: presenter/sena          # mouth0/1/2.png = 입 다문/반쯤/크게, blink0/1/2.png = 눈 감은 버전 (선택)
+                                  # 직접 만든 캐릭터 그림으로 바꾸려면 같은 이름의 PNG 6장을 새 폴더에 넣고 경로만 바꾸세요
+  ring: 0.035                     # 테두리 두께 (채널 대표색)
+  landscape: {size: 300, margin_right: 40, margin_bottom: 90}    # 가로 영상 (1920 기준 px)
+  vertical:  {size: 340, margin_right: 140, margin_bottom: 230}  # 세로 쇼츠 (1080 기준 px, 오른쪽 버튼 줄은 피함)
 
 title_card:
   show: true                      # 대본의 '제목:' 을 처음 몇 초 보여주기

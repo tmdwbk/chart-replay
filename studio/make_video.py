@@ -135,6 +135,11 @@ def load_brand(path):
     brand["_intro"] = resolve(brand.get("intro"))
     brand["_outro"] = resolve(brand.get("outro"))
     brand["_bgm"] = resolve(brand["music"].get("bgm"))
+    pr = brand.get("presenter") or {}
+    brand["_presenter_dir"] = resolve(pr.get("images")) if pr.get("enabled") else None
+    if pr.get("enabled") and brand["_presenter_dir"] and not (brand["_presenter_dir"] / "mouth0.png").exists():
+        log(f"  ! 진행자 폴더에 mouth0.png 가 없습니다: {brand['_presenter_dir']} (진행자 끔)")
+        brand["_presenter_dir"] = None
     brand["_sfx_files"] = {k: resolve(v) for k, v in (brand["sfx"].get("files") or {}).items()}
     return brand
 
@@ -349,15 +354,18 @@ def render_segments(segs, src, brand, work, W, H, fps, fast):
               f"scale={W}:{H}:force_original_aspect_ratio=decrease",
               f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=0x{bg}", "setsar=1"]
         if "줌" in s.tags:
+            # [줌:x,y,배율] — 화면의 x%, y% 지점을 그 자리에 둔 채 확대 (기본 50,50,1.4)
+            vals = [v.strip() for v in (s.tags["줌"] or "").split(",") if v.strip()]
             try:
-                zx, zy = [float(v) / 100 for v in (s.tags["줌"] or "50,50").split(",")]
+                zx = float(vals[0]) / 100 if len(vals) > 0 else 0.5
+                zy = float(vals[1]) / 100 if len(vals) > 1 else 0.5
+                z = float(vals[2]) if len(vals) > 2 else 1.4
             except ValueError:
-                zx, zy = 0.5, 0.5
-            z, ramp = 1.45, fps * 0.8
+                zx, zy, z = 0.5, 0.5, 1.4
+            ramp = fps * 0.8
             zexpr = f"min(1+{z - 1}*on/{ramp},{z})"
             vf.append(f"zoompan=z='{zexpr}':d=1:s={W}x{H}:fps={fps}"
-                      f":x='max(0,min(iw-iw/zoom,{zx}*iw-iw/zoom/2))'"
-                      f":y='max(0,min(ih-ih/zoom,{zy}*ih-ih/zoom/2))'")
+                      f":x='{zx}*(iw-iw/zoom)':y='{zy}*(ih-ih/zoom)'")
         vf.append(f"tpad=stop_mode=clone:stop_duration={s.out_len + 1:.3f}")
         ffmpeg("-ss", f"{s.src_start:.3f}", "-t", f"{s.used_src + 0.1:.3f}", "-i", src,
                "-vf", ",".join(vf), "-frames:v", s.frames, "-an",
@@ -498,6 +506,19 @@ def chunk_text(display, max_chars):
     return chunks
 
 
+def wrap_words(text, width):
+    """띄어쓰기 기준으로 width 글자 안쪽으로 줄바꿈 (제목용)."""
+    lines, line = [], ""
+    for w in text.split():
+        cand = (line + " " + w).strip()
+        if line and len(cand) > width:
+            lines.append(line)
+            line = w
+        else:
+            line = cand
+    return lines + ([line] if line else [])
+
+
 def caption_events(segs, brand, max_chars):
     """[(시작, 끝, 표시글, 강조여부, 구간번호)] — 출력 영상 기준 시간."""
     lead, events = brand["pacing"]["lead"], []
@@ -546,6 +567,11 @@ def styled(chunk, brand, emphasis, state):
 
 
 def write_ass(path, brand, W, H, total, captions, title, chapters, sub_size, vertical=False):
+    # 가로 영상에서 오른쪽 아래 진행자가 있으면 자막을 왼쪽으로 비켜 가운데 정렬
+    cap_mr = 60
+    if brand.get("_presenter_dir") and not vertical:
+        S, tag, px, py = presenter_box(brand, W, H, vertical)
+        cap_mr = W - px + 20
     c, f, sub = brand["colors"], brand["font"], brand["subtitle"]
     bold = -1 if f["bold"] else 0
     white, black = ass_color(c["text"]), ass_color(c["outline"])
@@ -553,8 +579,8 @@ def write_ass(path, brand, W, H, total, captions, title, chapters, sub_size, ver
     scale = H / 1080 if not vertical else W / 1080
     cap_style = (f"Style: Cap,{f['name']},{sub_size},{white},{white},{black},"
                  f"{ass_color('#000000', 0x60) if box else ass_color(c['outline'], 0x40)},{bold},0,0,0,100,100,0,0,"
-                 f"{3 if box else 1},{sub['outline']},{sub['shadow']},2,60,60,"
-                 f"{int(H * 0.30) if vertical else sub['margin_bottom']},1")
+                 f"{3 if box else 1},{sub['outline']},{sub['shadow']},2,60,{cap_mr},"
+                 f"{int(H * 0.35) if vertical else sub['margin_bottom']},1")
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 2", "ScaledBorderAndShadow: yes", "",
@@ -563,14 +589,14 @@ def write_ass(path, brand, W, H, total, captions, title, chapters, sub_size, ver
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
         cap_style,
-        f"Style: Title,{f['name']},{int(78 * scale)},{white},{white},{black},{ass_color('#000000', 0x40)},"
-        f"-1,0,0,0,100,100,0,0,1,5,2,{8 if vertical else 5},80,80,{int(H * 0.10) if vertical else 0},1",
+        f"Style: Title,{f['name']},{int((70 if vertical else 78) * scale)},{white},{white},{black},{ass_color('#000000', 0x40)},"
+        f"-1,0,0,0,100,100,0,0,1,5,2,{8 if vertical else 5},80,80,{int(H * 0.07) if vertical else 0},1",
         f"Style: Chapter,{f['name']},{int(40 * scale)},{ass_color('#111111')},{white},{ass_color(c['main'])},"
-        f"{ass_color(c['main'])},-1,0,0,0,100,100,0,0,3,14,0,7,60,60,60,1",
+        f"{ass_color(c['main'])},-1,0,0,0,100,100,0,0,3,14,0,{9 if vertical else 7},60,60,60,1",
         f"Style: Mark,{f['name']},{int(30 * scale)},{ass_color(c['text'], 0x55)},{white},{ass_color('#000000', 0x80)},"
         f"{ass_color('#000000', 0xFF)},-1,0,0,0,100,100,0,0,1,2,0,9,40,40,36,1",
         f"Style: Note,{f['name']},{int(26 * scale)},{ass_color('#DDDDDD')},{white},{ass_color('#000000', 0x50)},"
-        f"{ass_color('#000000', 0x80)},0,0,0,0,100,100,0,0,1,2,0,{2 if vertical else 8},40,40,{int(H * 0.04) if vertical else 24},1",
+        f"{ass_color('#000000', 0x80)},0,0,0,0,100,100,0,0,1,2,0,{2 if vertical else 8},40,40,{int(H * 0.105) if vertical else 24},1",
         f"Style: Bar,{f['name']},10,{ass_color(c['main'])},{white},{ass_color(c['main'])},{ass_color(c['main'])},"
         f"0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
         "", "[Events]",
@@ -594,18 +620,24 @@ def write_ass(path, brand, W, H, total, captions, title, chapters, sub_size, ver
 
     # 제목
     if title and brand["title_card"]["show"]:
-        d = float(brand["title_card"]["seconds"])
+        # 세로 영상은 제목을 끝까지 띄워둠 (쇼츠 헤드라인)
+        d = total if vertical else float(brand["title_card"]["seconds"])
         main = ass_color(c["main"])
-        ev(0, min(d, total), "Title",
-           f"{{\\fad(300,400)\\c{main}}}{ass_escape(brand['channel']['name'])}{{\\c{white}}}\\N{ass_escape(title)}", 3)
+        head = "\\N".join(ass_escape(x) for x in wrap_words(title, 15)) if vertical else ass_escape(title)
+        ch_line = f"{{\\c{main}}}{ass_escape(brand['channel']['name'])}{{\\c{white}}}\\N" if brand["channel"]["name"] else ""
+        ev(0, min(d, total), "Title", f"{{\\fad(300,{0 if vertical else 400})}}{ch_line}{head}", 3)
 
     # 챕터 라벨
     for at, name in chapters:
-        ev(at, min(at + 3.2, total), "Chapter",
-           f"{{\\move(-400,60,60,60,0,250)\\fad(0,300)}} {ass_escape(name)} ", 3)
+        if vertical:
+            y = int(H * 0.285)
+            mv = f"\\move({W + 400},{y},{W - 50},{y},0,250)"
+        else:
+            mv = "\\move(-400,60,60,60,0,250)"
+        ev(at, min(at + 3.2, total), "Chapter", f"{{{mv}\\fad(0,300)}} {ass_escape(name)} ", 3)
 
     # 워터마크 (로고 이미지가 없을 때)
-    if not brand["_logo"] and brand["channel"]["name"]:
+    if not brand["_logo"] and brand["channel"]["name"] and not (vertical and title):
         ev(0, total, "Mark", ass_escape(brand["channel"]["name"]), 1)
 
     # 면책 문구
@@ -630,6 +662,142 @@ def write_srt(path, captions):
     Path(path).write_text("\n".join(out), encoding="utf-8")
 
 
+# ───────────────────────────── 진행자 (SENA) ─────────────────────────────
+
+def presenter_box(brand, W, H, vertical):
+    """원형 진행자 화면의 크기·위치 (화면 오른쪽 아래)."""
+    pr = brand["presenter"]
+    lay = pr["vertical" if vertical else "landscape"]
+    k = W / 1080 if vertical else W / 1920
+    S = int(lay["size"] * k)
+    tag = int(S * 0.16) if pr.get("name_tag", True) and pr.get("name") else 0
+    x = W - S - int(lay["margin_right"] * k)
+    y = H - S - tag // 2 - int(lay["margin_bottom"] * k)
+    return S, tag, x, y
+
+
+def font_path(name, bold=True):
+    try:
+        out = subprocess.run(["fc-match", "-f", "%{file}", f"{name}:{'bold' if bold else 'regular'}"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout.strip()
+        return out or None
+    except FileNotFoundError:
+        return None
+
+
+def speech_levels(segs, total, brand, fps):
+    """프레임마다 내레이션 소리 크기(0~1 정도). 입 모양을 고르는 데 씀."""
+    from array import array
+    n = int(round(total * fps)) + 1
+    lv = [0.0] * n
+    rate = 16000
+    win = rate // fps
+    lead = brand["pacing"]["lead"]
+    for s in segs:
+        if not s.tts:
+            continue
+        raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(s.tts), "-ac", "1", "-ar", str(rate),
+                              "-f", "s16le", "-"], stdout=subprocess.PIPE).stdout
+        a = array("h", raw[: len(raw) // 2 * 2])
+        f0 = int(round((s.out_start + lead) * fps))
+        for j in range(len(a) // win):
+            chunk = a[j * win:(j + 1) * win]
+            rms = math.sqrt(sum(v * v for v in chunk) / len(chunk)) / 32768
+            if 0 <= f0 + j < n:
+                lv[f0 + j] = rms
+    voiced = sorted(v for v in lv if v > 0.005)
+    ref = voiced[int(len(voiced) * 0.9)] if voiced else 1.0
+    return [min(1.5, v / ref) for v in lv]
+
+
+def render_presenter(segs, total, brand, work, W, H, fps, vertical, name):
+    """진행자 원형 화면을 투명 배경 영상(.mov)으로 만든다. 입은 목소리 크기에 맞춰 움직이고 가끔 눈을 깜빡임."""
+    import random
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    pr = brand["presenter"]
+    d = brand["_presenter_dir"]
+    S, tag, x, y = presenter_box(brand, W, H, vertical)
+    ring = max(2, int(S * float(pr.get("ring", 0.035))))
+    pad = int(S * 0.08)                      # 말할 때 빛나는 테두리 여유
+    BW, BH = S + pad * 2, S + tag // 2 + pad * 2
+    main = tuple(int(brand["colors"]["main"].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+
+    D = S - ring * 2
+    mask = Image.new("L", (D, D), 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, D - 1, D - 1], fill=255)
+    faces = {}
+    for kind in ("mouth", "blink"):
+        for m in range(3):
+            f = d / f"{kind}{m}.png"
+            if not f.exists():
+                f = d / f"mouth{m}.png" if (d / f"mouth{m}.png").exists() else d / "mouth0.png"
+            im = Image.open(f).convert("RGBA")
+            w, h = im.size
+            side = min(w, h)
+            im = im.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2)).resize((D, D), Image.LANCZOS)
+            faces[(kind, m)] = im
+
+    fp = font_path(brand["font"]["name"])
+    try:
+        font = ImageFont.truetype(fp, int(tag * 0.62)) if fp else ImageFont.load_default(int(tag * 0.62))
+    except Exception:
+        font = ImageFont.load_default()
+
+    cache = {}
+
+    def frame(m, blink, glow):
+        key = (m, blink, glow)
+        if key in cache:
+            return cache[key]
+        im = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+        cx, cy = BW // 2, pad + S // 2
+        if glow:
+            g = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+            ImageDraw.Draw(g).ellipse([cx - S // 2 - pad // 2, cy - S // 2 - pad // 2,
+                                       cx + S // 2 + pad // 2, cy + S // 2 + pad // 2], fill=main + (150,))
+            im = Image.alpha_composite(im, g.filter(ImageFilter.GaussianBlur(pad / 2.5)))
+        dr = ImageDraw.Draw(im)
+        dr.ellipse([cx - S // 2, cy - S // 2, cx + S // 2, cy + S // 2], fill=main + (255,))
+        im.paste(faces[("blink" if blink else "mouth", m)], (cx - D // 2, cy - D // 2), mask)
+        if tag:
+            dr = ImageDraw.Draw(im)
+            txt = pr["name"]
+            tb = dr.textbbox((0, 0), txt, font=font)
+            tw = tb[2] - tb[0] + tag
+            ty = pad + S - tag // 2
+            dr.rounded_rectangle([cx - tw // 2, ty, cx + tw // 2, ty + tag], tag // 2, fill=main + (255,))
+            dr.text((cx, ty + tag // 2), txt, font=font, fill=(17, 17, 17, 255), anchor="mm")
+        cache[key] = im.tobytes()
+        return cache[key]
+
+    lv = speech_levels(segs, total, brand, fps)
+    n = len(lv) - 1
+    rnd = random.Random(7)
+    next_blink, blink_left = int(fps * 1.5), 0
+    state, hold = 0, 0
+    out = work / f"{name}.mov"
+    p = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+                          "-s", f"{BW}x{BH}", "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb", str(out)],
+                         stdin=subprocess.PIPE)
+    for i in range(n):
+        v = lv[i]
+        want = 0 if v < 0.22 else (1 if v < 0.6 else 2)
+        if hold > 0 and want != state:
+            hold -= 1
+        else:
+            if want != state:
+                hold = 1          # 최소 2프레임 유지 → 덜 깜빡거림
+            state = want
+        if i >= next_blink:
+            blink_left, next_blink = 3, i + int(fps * rnd.uniform(2.5, 5.0))
+        blink = blink_left > 0
+        blink_left -= 1
+        p.stdin.write(frame(state, blink, v > 0.22))
+    p.stdin.close()
+    p.wait()
+    return out, x - pad, y - pad
+
+
 # ───────────────────────────── 합치기 ─────────────────────────────
 
 def ass_filter(ass_name, brand):
@@ -647,7 +815,7 @@ def logo_overlay(brand, W, H, idx, scale=1.0):
             f"[v0][lg]overlay={x}:{y}[v1]")
 
 
-def burn(clean, mix, ass_name, brand, W, H, out, enc, work, scale=1.0):
+def burn(clean, mix, ass_name, brand, W, H, out, enc, work, scale=1.0, presenter=None):
     inputs = ["-i", clean, "-i", mix]
     fc = "[0:v]null[v0];"
     last = "v0"
@@ -655,6 +823,11 @@ def burn(clean, mix, ass_name, brand, W, H, out, enc, work, scale=1.0):
         inputs += ["-i", brand["_logo"]]
         fc += logo_overlay(brand, W, H, 2, scale) + ";"
         last = "v1"
+    if presenter:
+        mov, px, py = presenter
+        inputs += ["-i", str(mov)]
+        fc += f"[{last}][{len(inputs) // 2 - 1}:v]overlay={px}:{py}:eof_action=pass[vp];"
+        last = "vp"
     fc += f"[{last}]{ass_filter(ass_name, brand)}[v]"
     ffmpeg(*inputs, "-filter_complex", fc, "-map", "[v]", "-map", "1:a", *enc,
            "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out, cwd=work)
@@ -734,6 +907,11 @@ def make_shorts(segs, clean, mix, brand, title, work, out, enc, fps, fast):
         inputs += ["-i", brand["_logo"]]
         fc.append(logo_overlay(brand, W, H, 2, W / 1920 * 1.6))
         last = "v1"
+    if brand["_presenter_dir"]:
+        mov, px, py = render_presenter(shifted, length, brand, work, W, H, fps, True, "presenter_shorts")
+        inputs += ["-i", mov.name]
+        fc.append(f"[{last}][{len(inputs) // 2 - 1}:v]overlay={px}:{py}:eof_action=pass[vp]")
+        last = "vp"
     fc.append(f"[{last}]{ass_filter('shorts.ass', brand)}[v]")
     ffmpeg(*inputs, "-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[ca]", *enc,
            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out, cwd=work)
@@ -769,7 +947,9 @@ def main():
     v = brand["video"]
     W, H, fps = int(v["width"]), int(v["height"]), int(v["fps"])
     if a.preview:
-        W, H = 640, round(640 * H / W / 2) * 2
+        pw = 640 if W >= H else 360
+        W, H = pw, round(pw * H / W / 2) * 2
+    vertical = H > W   # 세로(쇼츠) 영상: 쇼츠용 자막 크기·배치 사용
     enc = ["-c:v", "libx264", "-preset", "ultrafast" if a.preview else v["preset"],
            "-crf", str(28 if a.preview else v["crf"]), "-pix_fmt", "yuv420p"]
 
@@ -800,12 +980,21 @@ def main():
     mix = build_audio(segs, total, brand, work, seed=script.stem)
 
     log("5/6 자막·로고·제목·진행바 입히기")
-    sub_size = int(brand["subtitle"]["size"] * H / 1080)
-    caps = caption_events(segs, brand, int(brand["subtitle"]["max_chars"]))
+    if vertical:
+        sub_size = int(brand["shorts"]["subtitle_size"] * W / 1080)
+        caps = caption_events(segs, brand, int(brand["shorts"]["max_chars"]))
+    else:
+        sub_size = int(brand["subtitle"]["size"] * H / 1080)
+        caps = caption_events(segs, brand, int(brand["subtitle"]["max_chars"]))
     chapters = [(s.out_start, s.tags["챕터"]) for s in segs if s.tags.get("챕터")]
-    write_ass(work / "main.ass", brand, W, H, total, caps, title, chapters, sub_size)
+    write_ass(work / "main.ass", brand, W, H, total, caps, title, chapters, sub_size, vertical=vertical)
+    presenter = None
+    if brand["_presenter_dir"]:
+        log(f"  진행자 {brand['presenter']['name']} 화면 만들기")
+        presenter = render_presenter(segs, total, brand, work, W, H, fps, vertical, "presenter")
     body = work / "body.mp4"
-    burn(clean.name, mix.name, "main.ass", brand, W, H, body.name, enc, work, scale=W / 1920)
+    burn(clean.name, mix.name, "main.ass", brand, W, H, body.name, enc, work, presenter=presenter,
+         scale=W / 1080 if vertical else W / 1920)
 
     log("6/6 인트로/아웃트로 붙이기 · 내보내기")
     final = outdir / f"{name}.mp4"
