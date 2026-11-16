@@ -26,11 +26,21 @@ video:
   preset: medium
 
 voice:
-  engine: edge                    # edge = 마이크로소프트 Edge 무료 TTS / test = 인터넷 없이 삐- 소리 (점검용)
-  name: ko-KR-SunHiNeural         # 여성(진행자 SENA). 남성은 ko-KR-InJoonNeural
+  engine: edge                    # edge = 무료 Edge TTS / elevenlabs = 가장 사람 같은 목소리(유료) / test = 점검용 삐- 소리
+  name: ko-KR-SunHiNeural         # Edge 목소리: 여성(진행자 SENA). 남성은 ko-KR-InJoonNeural
   rate: "+5%"                     # 말 빠르기
   pitch: "+0Hz"
   volume: "+0%"
+  humanize:                       # Edge 목소리를 사람처럼 (구절마다 억양·속도 변화, 자연스러운 쉼, 숨소리)
+    enabled: true
+    breaths: true                 # 긴 문장 사이 자동 숨소리. 대본에 {숨} 을 쓰면 원하는 곳에 숨소리
+    breath_level: 0.035           # 숨소리 크기
+  elevenlabs:                     # engine: elevenlabs 일 때. 키는 환경변수 ELEVENLABS_API_KEY
+    voice_id: ""                  # python3 studio/make_video.py --list-voices 로 목록 보고 골라 넣기
+    model: eleven_v3              # eleven_v3 = 숨소리·감정 표현 가능 ({숨} {한숨} {웃음} {속삭임} {놀람})
+    stability: 0.5                # 낮을수록 감정 풍부, 높을수록 안정적 (v3 는 0 / 0.5 / 1)
+    similarity: 0.8
+    style: 0.35
 
 pacing:                           # 컷편집 템포
   max_speed: 2.0                  # 화면이 내레이션보다 길면 최대 몇 배속까지 빨리 돌릴지 (넘치는 뒷부분은 잘라냄)
@@ -54,11 +64,15 @@ logo:
   opacity: 0.85
   margin: 36
 
-presenter:                        # 화면 오른쪽 아래 동그란 진행자 (가상 캐릭터)
+presenter:                        # 화면 오른쪽 아래 동그란 진행자 (가상 인물 SENA)
   enabled: true
   name: SENA                      # 이름표 글자 ("" 이면 이름표 없음)
-  images: presenter/sena          # mouth0/1/2.png = 입 다문/반쯤/크게, blink0/1/2.png = 눈 감은 버전 (선택)
-                                  # 직접 만든 캐릭터 그림으로 바꾸려면 같은 이름의 PNG 6장을 새 폴더에 넣고 경로만 바꾸세요
+  mode: photo                     # photo = 실사 사진 1장을 목소리에 맞춰 말하게 / images = 일러스트 그림 6장
+  photo: presenter/sena_photo/sena.png   # 정면, 입 다문 사진. 바꾸려면 파일만 교체
+  crop: []                        # 사진에서 얼굴 부분 [x, y, 한변] (px). 비우면 자동
+  mouth: []                       # 입 위치 [x, y, 폭] (잘라낸 얼굴 기준 0~1). 비우면 자동으로 찾음
+  motion: 1.0                     # 숨쉬기·고개 움직임 정도 (0 = 정지)
+  images: presenter/sena          # mode: images 일 때: mouth0/1/2.png + blink0/1/2.png
   ring: 0.035                     # 테두리 두께 (채널 대표색)
   landscape: {size: 300, margin_right: 40, margin_bottom: 90}    # 가로 영상 (1920 기준 px)
   vertical:  {size: 340, margin_right: 140, margin_bottom: 230}  # 세로 쇼츠 (1080 기준 px, 오른쪽 버튼 줄은 피함)

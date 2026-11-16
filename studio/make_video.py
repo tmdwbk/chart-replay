@@ -136,8 +136,12 @@ def load_brand(path):
     brand["_outro"] = resolve(brand.get("outro"))
     brand["_bgm"] = resolve(brand["music"].get("bgm"))
     pr = brand.get("presenter") or {}
+    brand["_presenter_photo"] = resolve(pr.get("photo")) if pr.get("enabled") and pr.get("mode") == "photo" else None
     brand["_presenter_dir"] = resolve(pr.get("images")) if pr.get("enabled") else None
-    if pr.get("enabled") and brand["_presenter_dir"] and not (brand["_presenter_dir"] / "mouth0.png").exists():
+    if brand["_presenter_photo"] and not brand["_presenter_dir"]:
+        brand["_presenter_dir"] = brand["_presenter_photo"].parent
+    if pr.get("enabled") and not brand["_presenter_photo"] and brand["_presenter_dir"] \
+            and not (brand["_presenter_dir"] / "mouth0.png").exists():
         log(f"  ! 진행자 폴더에 mouth0.png 가 없습니다: {brand['_presenter_dir']} (진행자 끔)")
         brand["_presenter_dir"] = None
     brand["_sfx_files"] = {k: resolve(v) for k, v in (brand["sfx"].get("files") or {}).items()}
@@ -149,6 +153,7 @@ def load_brand(path):
 TS = r"(?:\d+:)?\d{1,2}:\d{2}(?:\.\d+)?"
 LINE_RE = re.compile(rf"^({TS})(?:\s*[-~]\s*({TS}))?\s*(.*)$")
 TAG_RE = re.compile(r"\[([^\]]+)\]")
+VOICE_TAG_RE = re.compile(r"\{([^}]*)\}")   # {숨} {한숨} {웃음} — 목소리 표현 (자막에는 안 나옴)
 KNOWN_TAGS = {"컷", "끝", "강조", "하이라이트", "효과음", "줌", "챕터", "원속도"}
 
 
@@ -164,6 +169,7 @@ class Seg:
     src_start: float
     src_end: float = None
     display: str = ""          # *강조* 표시가 남아있는 자막용 글
+    voice: str = ""            # TTS에 보낼 글 ({숨} 같은 목소리 표시 포함)
     tags: dict = field(default_factory=dict)
     # 계산 결과
     tts: Path = None
@@ -178,6 +184,10 @@ class Seg:
     @property
     def spoken(self):
         return re.sub(r"\s+", " ", self.display.replace("*", "")).strip()
+
+    @property
+    def voice_text(self):
+        return re.sub(r"\s+", " ", (self.voice or self.display).replace("*", "")).strip()
 
 
 def parse_script(path):
@@ -196,7 +206,8 @@ def parse_script(path):
         if not m:
             if last is None:
                 sys.exit(f"대본 {n}번째 줄: 시간으로 시작해야 합니다 → {line}")
-            last.display += " " + line          # 이어지는 줄
+            last.voice += " " + line            # 이어지는 줄
+            last.display = re.sub(r"\s+", " ", VOICE_TAG_RE.sub("", last.voice)).strip()
             continue
         start, end, rest = parse_ts(m.group(1)), (parse_ts(m.group(2)) if m.group(2) else None), m.group(3)
         tags = {}
@@ -218,7 +229,8 @@ def parse_script(path):
             events.append(("cut", start, end))
             last = None
             continue
-        seg = Seg(src_start=start, display=text, tags=tags)
+        seg = Seg(src_start=start, display=re.sub(r"\s+", " ", VOICE_TAG_RE.sub("", text)).strip(),
+                  voice=text, tags=tags)
         events.append(("seg", seg))
         if end is not None:
             events.append(("cut", end, None))   # 범위 끝 이후는 다음 시간까지 잘라냄
@@ -294,6 +306,197 @@ def tts_edge(text, voice, out_mp3):
             log(f"  TTS 재시도 ({e})")
 
 
+def _decode(path, rate):
+    """오디오 파일 → float32 mono numpy."""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", str(rate),
+                          "-f", "f32le", "-"], stdout=subprocess.PIPE).stdout
+    return np.frombuffer(raw, dtype=np.float32).copy()
+
+
+def _breath(rate, dur, rnd, level=0.035):
+    """들숨 소리 합성: 걸러낸 잡음 + 들이쉬는 모양의 크기 변화."""
+    import numpy as np
+    n = int(rate * dur)
+    noise = np.random.default_rng(rnd.randrange(1 << 30)).standard_normal(n)
+    spec = np.fft.rfft(noise)
+    f = np.fft.rfftfreq(n, 1 / rate)
+    band = np.exp(-((np.log(np.maximum(f, 1)) - np.log(1400)) / 0.75) ** 2)   # 1.4kHz 근처 숨결
+    sig = np.fft.irfft(spec * band, n)
+    t = np.linspace(0, 1, n)
+    env = np.sin(np.pi * np.clip(t / 0.85, 0, 1)) ** 1.5 * (0.6 + 0.4 * t)
+    sig = sig / (np.abs(sig).max() + 1e-9) * env * level
+    return sig.astype(np.float32)
+
+
+def _write_mp3(samples, rate, out_mp3, af=None):
+    import numpy as np
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "f32le", "-ar", str(rate), "-ac", "1", "-i", "-"]
+    if af:
+        cmd += ["-af", af]
+    cmd += ["-c:a", "libmp3lame", "-q:a", "2", str(out_mp3)]
+    subprocess.run(cmd, input=np.asarray(samples, np.float32).tobytes(), check=True)
+
+
+def _split_phrases(text):
+    """문장·쉼표 단위로 나누기. [(구절, 끝종류)] 끝종류: ',' '.' '?' '!' 'breath'"""
+    out = []
+    for part in re.split(r"(\{[^}]*\})", text):
+        if not part.strip():
+            continue
+        m = VOICE_TAG_RE.fullmatch(part.strip())
+        if m:
+            out.append(("", "breath" if m.group(1).strip() in ("숨", "한숨") else "tag"))
+            continue
+        for ph in re.findall(r"[^,.?!。…]+[,.?!。…]*", part):
+            ph = ph.strip()
+            if ph:
+                end = ph[-1] if ph[-1] in ",.?!" else ("." if ph[-1] in "。…" else "")
+                out.append((ph, end))
+    return out
+
+
+def tts_edge_human(text, voice, out_mp3):
+    """무료 Edge 목소리를 사람처럼: 구절마다 속도·높낮이 변화, 자연스러운 쉼, 숨소리."""
+    import numpy as np
+    import random
+    rate_sr = 24000
+    rnd = random.Random(int(hashlib.sha1(text.encode()).hexdigest(), 16))
+    h = voice.get("humanize") or {}
+    base_rate = int(str(voice["rate"]).replace("%", "") or 0)
+    base_pitch = int(str(voice["pitch"]).replace("Hz", "") or 0)
+    phrases = _split_phrases(text)
+    pieces, words, t = [], [], 0.0
+    tmp = Path(str(out_mp3) + ".part.mp3")
+    spoken_count = 0
+    for k, (ph, end) in enumerate(phrases):
+        if not ph:
+            if end == "breath":
+                b = _breath(rate_sr, rnd.uniform(0.38, 0.5), rnd, float(h.get("breath_level", 0.035)) * 1.3)
+                pieces.append(b)
+                pieces.append(np.zeros(int(rate_sr * 0.08), np.float32))
+                t += (len(b) + int(rate_sr * 0.08)) / rate_sr
+            continue
+        # 구절마다 조금씩 다른 속도·높낮이 (문장 끝은 살짝 느리게, 질문은 끝을 올림)
+        r = base_rate + rnd.randint(-4, 4) - (3 if end in ".!" else 0) + (2 if spoken_count == 0 else 0)
+        pt = base_pitch + rnd.randint(-5, 5) + (10 if end == "?" else 0) - (2 if end == "." else 0)
+        v = dict(voice, rate=f"{r:+d}%", pitch=f"{pt:+d}Hz")
+        w = tts_edge(ph, v, tmp)
+        a = _decode(tmp, rate_sr)
+        # 앞뒤 무음 다듬기
+        thr = 0.01 * (np.abs(a).max() + 1e-9)
+        idx = np.where(np.abs(a) > thr)[0]
+        s0, s1 = (max(0, idx[0] - int(rate_sr * 0.02)), min(len(a), idx[-1] + int(rate_sr * 0.06))) if len(idx) else (0, len(a))
+        a = a[s0:s1]
+        off = t - s0 / rate_sr
+        words += [(max(0.0, float(ws + off)), float(we + off), wt) for ws, we, wt in w]
+        pieces.append(a)
+        t += len(a) / rate_sr
+        spoken_count += 1
+        if k == len(phrases) - 1:
+            break
+        # 쉼 + 숨소리
+        if end == ",":
+            gap = rnd.uniform(0.14, 0.26)
+        elif end in ".?!":
+            gap = rnd.uniform(0.38, 0.55)
+        else:
+            gap = rnd.uniform(0.06, 0.12)
+        nxt = phrases[k + 1]
+        if h.get("breaths", True) and end in ".?!" and nxt[1] != "breath" and len(ph) >= 10:
+            b = _breath(rate_sr, min(gap + 0.05, rnd.uniform(0.32, 0.45)), rnd, float(h.get("breath_level", 0.035)))
+            pre = np.zeros(int(rate_sr * 0.06), np.float32)
+            seg = np.concatenate([pre, b])
+            rest = int(rate_sr * gap) - len(seg)
+            if rest > 0:
+                seg = np.concatenate([seg, np.zeros(rest, np.float32)])
+        else:
+            seg = np.zeros(int(rate_sr * gap), np.float32)
+        pieces.append(seg)
+        t += len(seg) / rate_sr
+    tmp.unlink(missing_ok=True)
+    audio = np.concatenate(pieces) if pieces else np.zeros(rate_sr // 2, np.float32)
+    # 살짝 따뜻하고 가까운 소리로 (저음 약간↑, 쏘는 고음 약간↓)
+    _write_mp3(audio, rate_sr, out_mp3, af="equalizer=f=200:t=q:w=1:g=2,equalizer=f=7000:t=q:w=1.4:g=-2.5")
+    return words
+
+
+ELEVEN_TAGS = {"숨": "[breathes]", "한숨": "[sighs]", "웃음": "[laughs]", "속삭임": "[whispers]", "놀람": "[surprised]"}
+
+
+def tts_elevenlabs(text, voice, out_mp3):
+    """ElevenLabs: 가장 사람 같은 목소리. 키는 환경변수 ELEVENLABS_API_KEY (클라우드에서는 자동 주입)."""
+    import base64
+    import urllib.request
+    el = voice.get("elevenlabs") or {}
+    model = el.get("model", "eleven_v3")
+    vid = el.get("voice_id")
+    if not vid:
+        sys.exit("brand.yaml 의 voice.elevenlabs.voice_id 를 정해주세요 (python3 studio/make_video.py --list-voices 로 목록 확인)")
+    tagged = VOICE_TAG_RE.sub(lambda m: (ELEVEN_TAGS.get(m.group(1).strip(), "") if model == "eleven_v3" else "") + " ", text)
+    body = {"text": re.sub(r"\s+", " ", tagged).strip(), "model_id": model,
+            "voice_settings": {"stability": float(el.get("stability", 0.4)),
+                               "similarity_boost": float(el.get("similarity", 0.8)),
+                               "style": float(el.get("style", 0.35)), "use_speaker_boost": True}}
+    if model == "eleven_v3":
+        body["voice_settings"]["stability"] = min([0.0, 0.5, 1.0], key=lambda v: abs(v - body["voice_settings"]["stability"]))
+    req = urllib.request.Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{vid}/with-timestamps?output_format=mp3_44100_128",
+        data=json.dumps(body).encode(), method="POST",
+        headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY", "injected-by-proxy"),
+                 "Content-Type": "application/json"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                res = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            msg = e.read().decode(errors="replace")[:500]
+            if e.code in (401, 403):
+                sys.exit(f"ElevenLabs 인증 실패 ({e.code}): API 키를 확인하세요.\n{msg}")
+            if attempt == 2:
+                sys.exit(f"ElevenLabs 실패 ({e.code}): {msg}")
+        except Exception as e:
+            if attempt == 2:
+                sys.exit(f"ElevenLabs 실패: {e}")
+        log("  ElevenLabs 재시도")
+    Path(out_mp3).write_bytes(base64.b64decode(res["audio_base64"]))
+    al = res.get("normalized_alignment") or res.get("alignment") or {}
+    chars = al.get("characters", [])
+    st, en = al.get("character_start_times_seconds", []), al.get("character_end_times_seconds", [])
+    words, cur, c0, c1, depth = [], "", None, None, 0
+    for ch, a, b in zip(chars, st, en):
+        if ch == "[":
+            depth += 1
+        if depth:
+            if ch == "]":
+                depth -= 1
+            continue
+        if ch.isspace():
+            if cur:
+                words.append((c0, c1, cur))
+            cur, c0 = "", None
+            continue
+        if c0 is None:
+            c0 = a
+        cur += ch
+        c1 = b
+    if cur:
+        words.append((c0, c1, cur))
+    return words
+
+
+def list_eleven_voices():
+    import urllib.request
+    req = urllib.request.Request("https://api.elevenlabs.io/v2/voices?page_size=100",
+                                 headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY", "injected-by-proxy")})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = json.loads(r.read())
+    for v in data.get("voices", []):
+        lab = v.get("labels") or {}
+        print(f"{v['voice_id']}  {v.get('name')}  {lab.get('gender', '')} {lab.get('accent', '')} {lab.get('language', '')}")
+
+
 def tts_test(text, out_mp3):
     """인터넷 없이 파이프라인 점검용: 글자 수만큼 길이의 부드러운 소리."""
     dur = 0.3 + 0.13 * count_chars(text)
@@ -304,13 +507,21 @@ def tts_test(text, out_mp3):
 
 
 def synthesize(seg, brand, work):
-    text = seg.spoken
+    text = seg.voice_text
     voice = brand["voice"]
     key = hashlib.sha1(json.dumps([text, voice], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
     mp3, meta = work / "tts" / f"{key}.mp3", work / "tts" / f"{key}.json"
     mp3.parent.mkdir(parents=True, exist_ok=True)
     if not (mp3.exists() and meta.exists()):
-        words = tts_edge(text, voice, mp3) if voice["engine"] == "edge" else tts_test(text, mp3)
+        eng = voice["engine"]
+        if eng == "elevenlabs":
+            words = tts_elevenlabs(text, voice, mp3)
+        elif eng == "edge" and (voice.get("humanize") or {}).get("enabled", True):
+            words = tts_edge_human(text, voice, mp3)
+        elif eng == "edge":
+            words = tts_edge(VOICE_TAG_RE.sub(" ", text), voice, mp3)
+        else:
+            words = tts_test(seg.spoken, mp3)
         meta.write_text(json.dumps(words, ensure_ascii=False))
     seg.tts = mp3
     seg.tts_dur = probe_duration(mp3)
@@ -711,76 +922,96 @@ def speech_levels(segs, total, brand, fps):
 
 
 def render_presenter(segs, total, brand, work, W, H, fps, vertical, name):
-    """진행자 원형 화면을 투명 배경 영상(.mov)으로 만든다. 입은 목소리 크기에 맞춰 움직이고 가끔 눈을 깜빡임."""
+    """진행자 원형 화면을 투명 배경 영상(.mov)으로 만든다.
+    mode: photo  → 사진 1장의 입·턱을 목소리에 맞춰 움직이고 숨쉬기·고개 움직임 (실사)
+          images → 입 모양 그림 3장 + 눈 깜빡임 그림 (일러스트)"""
     import random
     from PIL import Image, ImageDraw, ImageFilter, ImageFont
     pr = brand["presenter"]
-    d = brand["_presenter_dir"]
     S, tag, x, y = presenter_box(brand, W, H, vertical)
     ring = max(2, int(S * float(pr.get("ring", 0.035))))
     pad = int(S * 0.08)                      # 말할 때 빛나는 테두리 여유
     BW, BH = S + pad * 2, S + tag // 2 + pad * 2
+    cx, cy = BW // 2, pad + S // 2
     main = tuple(int(brand["colors"]["main"].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-
     D = S - ring * 2
     mask = Image.new("L", (D, D), 0)
     ImageDraw.Draw(mask).ellipse([0, 0, D - 1, D - 1], fill=255)
-    faces = {}
-    for kind in ("mouth", "blink"):
-        for m in range(3):
-            f = d / f"{kind}{m}.png"
-            if not f.exists():
-                f = d / f"mouth{m}.png" if (d / f"mouth{m}.png").exists() else d / "mouth0.png"
-            im = Image.open(f).convert("RGBA")
-            w, h = im.size
-            side = min(w, h)
-            im = im.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2)).resize((D, D), Image.LANCZOS)
-            faces[(kind, m)] = im
 
-    fp = font_path(brand["font"]["name"])
-    try:
-        font = ImageFont.truetype(fp, int(tag * 0.62)) if fp else ImageFont.load_default(int(tag * 0.62))
-    except Exception:
-        font = ImageFont.load_default()
+    photo = brand.get("_presenter_photo")
+    if photo:
+        sys.path.insert(0, str(HERE / "presenter"))
+        from photo_face import PhotoFace
+        pf = PhotoFace(photo, D, crop=pr.get("crop") or None, mouth=pr.get("mouth") or None,
+                       motion=float(pr.get("motion", 1.0)))
+    else:
+        d = brand["_presenter_dir"]
+        faces = {}
+        for kind in ("mouth", "blink"):
+            for m in range(3):
+                f = d / f"{kind}{m}.png"
+                if not f.exists():
+                    f = d / f"mouth{m}.png" if (d / f"mouth{m}.png").exists() else d / "mouth0.png"
+                im = Image.open(f).convert("RGBA")
+                w, h = im.size
+                side = min(w, h)
+                im = im.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
+                faces[(kind, m)] = im.resize((D, D), Image.LANCZOS)
 
-    cache = {}
-
-    def frame(m, blink, glow):
-        key = (m, blink, glow)
-        if key in cache:
-            return cache[key]
+    # 고정 레이어: 테두리(빛남 있/없), 이름표
+    bgs = {}
+    for glow in (False, True):
         im = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
-        cx, cy = BW // 2, pad + S // 2
         if glow:
             g = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
             ImageDraw.Draw(g).ellipse([cx - S // 2 - pad // 2, cy - S // 2 - pad // 2,
                                        cx + S // 2 + pad // 2, cy + S // 2 + pad // 2], fill=main + (150,))
             im = Image.alpha_composite(im, g.filter(ImageFilter.GaussianBlur(pad / 2.5)))
-        dr = ImageDraw.Draw(im)
-        dr.ellipse([cx - S // 2, cy - S // 2, cx + S // 2, cy + S // 2], fill=main + (255,))
-        im.paste(faces[("blink" if blink else "mouth", m)], (cx - D // 2, cy - D // 2), mask)
-        if tag:
-            dr = ImageDraw.Draw(im)
-            txt = pr["name"]
-            tb = dr.textbbox((0, 0), txt, font=font)
-            tw = tb[2] - tb[0] + tag
-            ty = pad + S - tag // 2
-            dr.rounded_rectangle([cx - tw // 2, ty, cx + tw // 2, ty + tag], tag // 2, fill=main + (255,))
-            dr.text((cx, ty + tag // 2), txt, font=font, fill=(17, 17, 17, 255), anchor="mm")
-        cache[key] = im.tobytes()
-        return cache[key]
+        ImageDraw.Draw(im).ellipse([cx - S // 2, cy - S // 2, cx + S // 2, cy + S // 2], fill=main + (255,))
+        bgs[glow] = im
+    tag_layer = None
+    if tag:
+        fp = font_path(brand["font"]["name"])
+        try:
+            font = ImageFont.truetype(fp, int(tag * 0.62)) if fp else ImageFont.load_default(int(tag * 0.62))
+        except Exception:
+            font = ImageFont.load_default()
+        tag_layer = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+        dr = ImageDraw.Draw(tag_layer)
+        txt = pr["name"]
+        tb = dr.textbbox((0, 0), txt, font=font)
+        tw = tb[2] - tb[0] + tag
+        ty = pad + S - tag // 2
+        dr.rounded_rectangle([cx - tw // 2, ty, cx + tw // 2, ty + tag], tag // 2, fill=main + (255,))
+        dr.text((cx, ty + tag // 2), txt, font=font, fill=(17, 17, 17, 255), anchor="mm")
+
+    cache = {}
+
+    def compose(face, glow):
+        im = bgs[glow].copy()
+        im.paste(face, (cx - D // 2, cy - D // 2), mask)
+        if tag_layer is not None:
+            im = Image.alpha_composite(im, tag_layer)
+        return im.tobytes()
 
     lv = speech_levels(segs, total, brand, fps)
     n = len(lv) - 1
     rnd = random.Random(7)
     next_blink, blink_left = int(fps * 1.5), 0
-    state, hold = 0, 0
+    state, hold, smooth = 0, 0, 0.0
     out = work / f"{name}.mov"
     p = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
                           "-s", f"{BW}x{BH}", "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb", str(out)],
                          stdin=subprocess.PIPE)
     for i in range(n):
         v = lv[i]
+        glow = v > 0.22
+        if photo:
+            # 입은 빨리 벌리고 천천히 닫음
+            target = 0.0 if v < 0.12 else min(1.0, (v - 0.12) / 0.75)
+            smooth += (target - smooth) * (0.75 if target > smooth else 0.4)
+            p.stdin.write(compose(pf.frame(i, fps, smooth).convert("RGBA"), glow))
+            continue
         want = 0 if v < 0.22 else (1 if v < 0.6 else 2)
         if hold > 0 and want != state:
             hold -= 1
@@ -792,7 +1023,10 @@ def render_presenter(segs, total, brand, work, W, H, fps, vertical, name):
             blink_left, next_blink = 3, i + int(fps * rnd.uniform(2.5, 5.0))
         blink = blink_left > 0
         blink_left -= 1
-        p.stdin.write(frame(state, blink, v > 0.22))
+        key = (state, blink, glow)
+        if key not in cache:
+            cache[key] = compose(faces[("blink" if blink else "mouth", state)], glow)
+        p.stdin.write(cache[key])
     p.stdin.close()
     p.wait()
     return out, x - pad, y - pad
@@ -928,7 +1162,11 @@ def main():
     ap.add_argument("--out", default=None, help="결과 폴더 (기본: 대본과 같은 폴더의 out/)")
     ap.add_argument("--shorts", action="store_true", help="[하이라이트] 구간으로 세로 쇼츠도 만들기")
     ap.add_argument("--preview", action="store_true", help="빠른 저화질 미리보기 (640x360)")
+    ap.add_argument("--list-voices", action="store_true", help="ElevenLabs 에서 쓸 수 있는 목소리 목록")
     ap.add_argument("--voice", default=None, help="이번만 다른 목소리 (예: ko-KR-SunHiNeural, test)")
+    if "--list-voices" in sys.argv:
+        list_eleven_voices()
+        return
     a = ap.parse_args()
 
     if not shutil.which("ffmpeg"):

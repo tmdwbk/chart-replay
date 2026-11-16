@@ -18,7 +18,7 @@
 
 ```bash
 brew install ffmpeg
-python3 -m pip install --user edge-tts pyyaml
+python3 -m pip install --user edge-tts pyyaml numpy pillow "opencv-python-headless<5"
 ```
 
 ## 2. 브랜딩 설정 — `studio/brand.yaml`
@@ -79,12 +79,21 @@ python3 studio/make_video.py ~/Movies/녹화.mov 대본.txt --shorts      # 완�
 
 ## 5. 진행자 SENA
 
-모든 영상의 오른쪽 아래 동그란 화면에 가상 진행자 **SENA**(금발, 아주 흰 피부, 한쪽 눈 안대)가 나와서 설명합니다.
+모든 영상의 오른쪽 아래 동그란 화면에 가상 진행자 **SENA**(금발, 아주 흰 피부, 선글라스)가 나와서 설명합니다.
 
-- 입 모양은 TTS 목소리 크기에 맞춰 3단계(다문 입, 반쯤, 크게)로 움직이고, 몇 초마다 눈을 깜빡입니다. 말하는 동안에는 채널색 테두리가 빛납니다.
-- 목소리 기본값은 여성 `ko-KR-SunHiNeural` 입니다.
-- 그림은 `studio/presenter/sena/` 의 PNG 6장(`mouth0~2.png`, `blink0~2.png`)입니다. 다른 그림(직접 그린 일러스트나 AI로 만든 이미지 등)으로 바꾸려면 같은 이름의 정사각형 PNG 6장을 새 폴더에 넣고 `brand.yaml` 의 `presenter.images` 경로만 바꾸면 됩니다. 기본 그림을 수정하려면 `studio/presenter/sena.svg.js` 를 고친 뒤 다시 실행하세요.
+- **실사 모드 (기본, `mode: photo`):** 사진 한 장(`studio/presenter/sena_photo/sena.png`)으로 말하는 얼굴을 만듭니다. 목소리 크기에 맞춰 턱과 입이 열리고 입 안과 윗니가 보이며, 숨 쉬듯 미세하게 움직이고 말할 때는 살짝 끄덕입니다. 무료이고 GPU가 필요 없습니다.
+  - 사진을 바꾸려면 `sena.png` 만 교체하세요. **정면을 보고 입을 다문** 고화질 사진이 가장 잘 됩니다.
+  - 입 위치를 잘못 찾으면 `presenter.mouth: [x, y, 폭]` 으로 직접 지정할 수 있습니다.
+- **일러스트 모드 (`mode: images`):** `studio/presenter/sena/` 의 그림 6장을 씁니다.
 - 끄려면 `presenter: {enabled: false}`.
+- 실제 사람처럼 보이는 AI 진행자이므로, 유튜브에 올릴 때 **"변경되거나 합성된 콘텐츠" → 예**를 꼭 선택하세요.
+
+### 목소리
+
+- **무료 (기본):** Edge TTS 여성 목소리(선희)에 사람처럼 들리는 보정이 들어갑니다. 구절마다 속도와 높낮이가 조금씩 달라지고, 문장 끝은 느려지고, 질문은 끝이 올라가고, 사이사이 자연스러운 쉼과 숨소리가 들어갑니다. 대본에 `{숨}` 을 쓰면 원하는 곳에 숨소리를 넣을 수 있습니다.
+- **ElevenLabs (유료, 가장 사람 같음):** `brand.yaml` 에서 `voice.engine: elevenlabs` 로 바꾸고, 환경변수 `ELEVENLABS_API_KEY` 를 설정한 뒤 `python3 studio/make_video.py --list-voices` 로 목록을 보고 `voice.elevenlabs.voice_id` 를 넣으면 됩니다. 대본의 `{숨}` `{한숨}` `{웃음}` `{속삭임}` `{놀람}` 이 그대로 감정 표현으로 바뀝니다.
+
+준비물 추가: `python3 -m pip install --user numpy "opencv-python-headless<5"`
 
 ## 6. 세로 쇼츠 바로 만들기
 
