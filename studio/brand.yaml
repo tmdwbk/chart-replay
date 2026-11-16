@@ -1,0 +1,86 @@
+# 채널 브랜딩 설정 — 모든 영상이 이 파일 하나를 따릅니다.
+# 파일 경로는 이 brand.yaml 이 있는 폴더 기준입니다.
+
+channel:
+  name: "내 차트 채널"            # 로고 이미지가 없을 때 워터마크로 쓰는 글자
+  disclaimer: "본 영상은 투자 권유가 아닙니다. 투자 판단과 책임은 본인에게 있습니다."
+  disclaimer_seconds: 6          # 영상 시작 후 몇 초 동안 보여줄지 (0이면 안 보임)
+
+colors:                           # "#RRGGBB"
+  main: "#F0B90B"                 # 채널 대표색: 제목·챕터·진행바
+  accent: "#FF4D4D"               # *강조단어*, [강조] 자막 색
+  text: "#FFFFFF"                 # 기본 자막 글자색
+  outline: "#000000"              # 자막 테두리
+  background: "#0B0E11"           # 화면 비율이 안 맞을 때 남는 여백 색
+
+font:
+  name: "Apple SD Gothic Neo"     # 맥 기본 한글 폰트. 예: "Pretendard", "NanumSquare"
+  bold: true
+  dir: ""                         # 설치 안 한 폰트 파일(.ttf/.otf)이 든 폴더 (선택)
+
+video:
+  width: 1920
+  height: 1080
+  fps: 30
+  crf: 20                         # 낮을수록 화질↑ 용량↑ (18~23)
+  preset: medium
+
+voice:
+  engine: edge                    # edge = 마이크로소프트 Edge 무료 TTS / test = 인터넷 없이 삐- 소리 (점검용)
+  name: ko-KR-InJoonNeural        # 남성. 여성은 ko-KR-SunHiNeural
+  rate: "+5%"                     # 말 빠르기
+  pitch: "+0Hz"
+  volume: "+0%"
+
+pacing:                           # 컷편집 템포
+  max_speed: 2.0                  # 화면이 내레이션보다 길면 최대 몇 배속까지 빨리 돌릴지 (넘치는 뒷부분은 잘라냄)
+  lead: 0.15                      # 구간 시작 후 말하기 전 여유 (초)
+  gap: 0.35                       # 말 끝난 뒤 다음 구간까지 여유 (초)
+  silent_speed: 1.0               # 내레이션 없는 구간 배속
+
+subtitle:
+  size: 62
+  max_chars: 24                   # 한 줄 최대 글자 수
+  outline: 4
+  shadow: 1
+  box: false                      # true 면 자막 뒤에 반투명 상자
+  margin_bottom: 70
+  emphasis_pop: true              # [강조] 자막이 톡 튀어나오는 효과
+
+logo:
+  file: ""                        # 예: assets/logo.png (투명 배경 PNG 추천)
+  position: top-right             # top-left / top-right / bottom-left / bottom-right
+  width: 180
+  opacity: 0.85
+  margin: 36
+
+title_card:
+  show: true                      # 대본의 '제목:' 을 처음 몇 초 보여주기
+  seconds: 4
+
+progress_bar:
+  show: true                      # 화면 맨 아래 채널색 진행바
+  height: 6
+
+music:
+  bgm: ""                         # 배경음악 파일 또는 폴더 (폴더면 영상마다 하나 골라 씀)
+  volume: 0.18
+  duck: true                      # 말할 때 배경음악 자동으로 줄이기
+  fade_out: 2.5
+
+sfx:                              # 기본 내장 효과음: pop, whoosh, ding (파일 없이도 됨)
+  emphasis: pop                   # [강조] 구간에 나는 소리 ("" 이면 없음)
+  chapter: whoosh                 # [챕터:...] 나올 때
+  highlight: ""                   # [하이라이트] 구간 시작할 때
+  volume: 0.8
+  files: {}                       # 직접 가진 효과음: { cash: assets/sfx/cash.wav }  →  대본에서 [효과음:cash]
+
+intro: ""                         # 채널 인트로 영상 (선택)
+outro: ""                         # 채널 아웃트로 영상 (선택)
+
+shorts:                           # --shorts 로 [하이라이트] 구간만 세로 영상으로
+  width: 1080
+  height: 1920
+  subtitle_size: 76
+  max_chars: 13
+  max_seconds: 60

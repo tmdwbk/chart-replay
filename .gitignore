@@ -4,3 +4,6 @@ __pycache__/
 screenshot*.png
 screenshot*.jpg
 data/
+studio/**/out/
+studio/assets/*
+!studio/assets/README.txt
