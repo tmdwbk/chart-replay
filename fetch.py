@@ -210,6 +210,20 @@ def fetch_binance(symbol, start_utc, end_utc):
 
 # ---------------------------------------------------------------- 업비트
 
+def upbit_has(market):
+    """업비트 원화 마켓에 이 종목이 있는지 최근 1분봉 하나로 확인한다(없으면 404)."""
+    for _ in range(3):
+        r = SESSION.get(UPBIT_URL, params={"market": market, "count": 1}, timeout=30)
+        if r.status_code == 429:
+            time.sleep(2)
+            continue
+        if r.status_code in (400, 404):
+            return False
+        r.raise_for_status()
+        return bool(r.json())
+    return True  # 한도에 계속 걸리면 판단을 미루고 받기를 시도한다
+
+
 def fetch_upbit(market, start_utc, end_utc):
     """업비트 원화 현물 1분봉. 최신 → 과거 방향으로 200개씩 넘긴다."""
     s, e = int(start_utc.timestamp()), int(end_utc.timestamp())
@@ -576,6 +590,9 @@ def main():
     if base.startswith("1000"):
         base = base[4:]
     market = f"KRW-{base}"
+    if not upbit_has(market):
+        sys.exit(f"'{a.symbol}' 을(를) 찾지 못했어요. 바이낸스 선물에도, 업비트 원화 마켓({market})에도 없어요.\n"
+                 "코인 이름을 다시 확인해 주세요. 예: XRPUSDT.P, SOLUSDT.P")
     log(f"업비트 원화 현물 {market} 을(를) 받는 중… (현물·원화 가격이에요)")
     if a.all:
         start_d = date(2017, 10, 1)  # 업비트 원화 마켓 시작. 상장 전 달은 빈 응답 한 번으로 넘어감
