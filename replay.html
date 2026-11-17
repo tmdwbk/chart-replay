@@ -21,7 +21,23 @@
   #info b { color:#fff; }
   .up { color:var(--up); } .down { color:var(--down); } .dim { color:var(--dim); }
   #main { flex:1; display:flex; min-height:0; }
-  #chart { flex:1; min-width:0; position:relative; overflow:hidden; }
+  #left { flex:1; min-width:0; display:flex; flex-direction:column; }
+  #chart { flex:1; min-width:0; min-height:0; position:relative; overflow:hidden; }
+  #bottom { height:230px; flex:none; border-top:1px solid var(--line); background:#161a25; display:flex; flex-direction:column; }
+  .btabs { display:flex; gap:22px; align-items:center; padding:0 12px; border-bottom:1px solid var(--line); }
+  .btabs .bt { background:none; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 1px 6px; color:var(--dim); font-size:13px; }
+  .btabs .bt.on { color:#fff; border-bottom-color:#fff; }
+  .bfilter { display:flex; gap:6px; align-items:center; padding:6px 12px; font-size:12px; flex-wrap:wrap; }
+  .bfilter .seg { display:flex; background:#262b3c; border-radius:4px; padding:2px; }
+  .bfilter .seg button { background:none; border:none; padding:2px 9px; color:var(--dim); font-size:12px; }
+  .bfilter .seg button.on { background:#3a4054; color:#fff; }
+  #bbody { flex:1; overflow:auto; }
+  #bbody table { font-size:12px; }
+  #bbody th { position:sticky; top:0; background:#161a25; color:var(--dim); font-weight:normal; text-align:left; padding:6px 10px; white-space:nowrap; }
+  #bbody td { text-align:left; padding:6px 10px; white-space:nowrap; vertical-align:middle; }
+  #bbody .tag { display:inline-block; background:#262b3c; color:var(--dim); border-radius:3px; padding:0 5px; font-size:11px; margin-right:3px; }
+  #bbody .empty { text-align:center; color:var(--dim); padding:40px 0; }
+  #bbody td button { padding:2px 8px; font-size:12px; }
   #legend { position:absolute; top:6px; left:8px; z-index:5; pointer-events:none; font-size:13px; font-variant-numeric: tabular-nums;
             background:rgba(19,23,34,.75); padding:3px 6px; border-radius:4px; max-width:calc(100% - 90px); }
   #legend .k { color:var(--dim); margin-left:8px; } #legend .k:first-child { margin-left:0; }
@@ -67,6 +83,7 @@
     body { height:auto; }
     #main { flex-direction:column; }
     #chart { height:60vh; min-height:360px; flex:none; }
+    #bottom { height:auto; max-height:60vh; }
     #side { width:auto; border-left:none; border-top:1px solid var(--line); }
   }
   kbd { background:#262b3c; border:1px solid #363c4e; border-radius:3px; padding:0 4px; font-size:11px; }
@@ -113,7 +130,26 @@
 <div id="info"><span class="dim">데이터를 고르고 시작 시각을 정한 뒤 [여기서 시작]을 누르세요.</span></div>
 
 <div id="main">
+  <div id="left">
   <div id="chart"><div id="legend"></div><div id="ordLayer"></div></div>
+  <div id="bottom">
+    <div class="btabs">
+      <button class="bt on" data-b="pos">포지션</button>
+      <button class="bt" data-b="hist">포지션 기록</button>
+      <button class="bt" data-b="ord">대기 주문</button>
+      <label class="chk dim" style="margin-left:auto; font-size:12px"><input type="checkbox" id="hideOther" checked> 다른 종목 숨기기</label>
+    </div>
+    <div class="bfilter" id="histFilter" style="display:none">
+      <div class="seg" id="fSide"><button class="on" data-v="all">전체</button><button data-v="long">롱</button><button data-v="short">숏</button></div>
+      <div class="seg" id="fPnl"><button class="on" data-v="all">전체 손익</button><button data-v="win">수익</button><button data-v="loss">손실</button></div>
+      <span id="histSum" class="dim" style="margin-left:6px"></span>
+      <span style="margin-left:auto"></span>
+      <button id="btnCsv">기록 CSV 저장</button>
+      <button id="btnClear">이 종목 기록 지우기</button>
+    </div>
+    <div id="bbody"></div>
+  </div>
+  </div>
   <div id="side">
     <div class="otop">
       <span class="chip" title="손실이 증거금까지만 나는 격리 마진으로 계산해요">격리</span>
@@ -171,15 +207,6 @@
       <button id="btnResetBal" title="잔고를 시작 잔고로 되돌림 (기록은 그대로)">잔고 초기화</button>
       <label class="dim">편도 수수료 %</label> <input type="number" id="fee" value="0.05" step="0.01" min="0" style="width:54px">
     </div>
-    <div id="summary" class="dim"></div>
-    <div style="display:flex; gap:6px;">
-      <button id="btnCsv">기록 CSV 저장</button>
-      <button id="btnClear">기록 지우기</button>
-    </div>
-    <table>
-      <thead><tr><th>#</th><th>방향</th><th>진입</th><th>청산</th><th>손익 USDT</th><th>ROE%</th></tr></thead>
-      <tbody id="trades"></tbody>
-    </table>
     <div class="help">
       <kbd>→</kbd> 한 봉 · <kbd>Shift</kbd>+<kbd>→</kbd> 10봉 · <kbd>←</kbd> 한 봉 뒤로 · <kbd>스페이스</kbd> 재생/멈춤<br>
       <kbd>B</kbd> 매수(롱) · <kbd>S</kbd> 매도(숏) (위에서 고른 지정가·시장가로) · <kbd>X</kbd> 청산(지금 가격)<br>
@@ -802,7 +829,7 @@ function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 �
 }
 
 function renderPos() {
-  renderAcct(); syncLines(); renderOrdHint(); if (!drag) renderChips();
+  renderAcct(); syncLines(); renderOrdHint(); if (!drag) renderChips(); if (btab !== 'hist') renderBottom(); else renderBottomCounts();
   if (Date.now() < flashUntil) return;
   const el = $('pos');
   const ordTxt = (o) => `걸린 손익절: 익절 ${o.tp != null ? `<span style="color:#42a5f5">${fmtP(o.tp)}</span>` : '<span class="dim">없음</span>'} · ` +
@@ -845,24 +872,82 @@ function renderMarkers() {
   candle.setMarkers(mk);
 }
 
-function renderTrades() {
-  const tb = $('trades'); tb.innerHTML = '';
-  [...trades].reverse().forEach((tr, ri) => {
-    const i = trades.length - ri;
-    const has = tr.pnl != null;
-    const tr_ = document.createElement('tr');
-    tr_.innerHTML = `<td>${i}</td><td class="${tr.side === 'long' ? 'up' : 'down'}">${tr.side === 'long' ? '롱' : '숏'}${tr.liq ? ' <span class="down">강제청산</span>' : tr.reason === 'tp' ? ' <span style="color:#42a5f5">익절</span>' : tr.reason === 'sl' ? ' <span style="color:#ba68c8">손절</span>' : ''}</td>` +
-      `<td title="${fmtKst(tr.t_in)} · ${tr.entry}">${fmtKst(tr.t_in).slice(5)}</td><td title="${fmtKst(tr.t_out)} · ${tr.exit}">${fmtKst(tr.t_out).slice(11)}</td>` +
-      `<td class="${cls(has ? tr.pnl : tr.net)}">${has ? usdS(tr.pnl) : '-'}</td>` +
-      `<td class="${cls(has ? tr.pnl : tr.net)}">${has ? sgn(tr.pnl / tr.margin * 100, 1) : sgn(tr.net * tr.lev, 1)}</td>`;
-    tb.appendChild(tr_);
-  });
-  if (trades.length) {
-    const wins = trades.filter((t) => (t.pnl ?? t.net) > 0).length;
-    const sum = trades.reduce((s, t) => s + (t.pnl || 0), 0);
-    const fees = trades.reduce((s, t) => s + (t.fees || 0), 0);
-    $('summary').innerHTML = `${meta.symbol} ${trades.length}회 · 수익 ${wins} / 손실 ${trades.length - wins} · 실현 손익 <b class="${cls(sum)}">${usdS(sum)}</b> <span class="dim">(낸 수수료 ${usd(fees)})</span>`;
-  } else $('summary').textContent = '';
+// ---- 아래 칸: 포지션 / 포지션 기록 / 대기 주문 (거래소의 Positions · Position History · Open Orders 처럼)
+let btab = 'pos', fSide = 'all', fPnl = 'all';
+const fmtN = (x) => (x == null ? '-' : String(+(+x).toPrecision(8)));
+const sideTxt = (side) => `<span class="${side === 'long' ? 'up' : 'down'}">${side === 'long' ? '롱' : '숏'}</span>`;
+const symTag = (sym, lev) => `<b>${sym}</b><br><span class="tag">격리</span><span class="tag">${lev}x</span>`;
+const sizeTxt = (o, sym) => meta && meta.quote === 'USDT' ? `${(o.notional / o.entry).toLocaleString('en-US', { maximumFractionDigits: o.notional / o.entry < 10 ? 4 : 0 })} ${sym.replace(/USDT$/, '')}` : usd(o.notional);
+const reasonTxt = (t) => t.liq ? '<span class="down">강제청산</span>' : t.reason === 'tp' ? '<span style="color:#42a5f5">익절</span>' : t.reason === 'sl' ? '<span style="color:#ba68c8">손절</span>' : '직접 청산';
+function beP(o) { const f = o.fee / 100; return o.side === 'long' ? o.entry * (1 + f) / (1 - f) : o.entry * (1 - f) / (1 + f); }   // 수수료까지 0원이 되는 가격
+function allTrades() {                  // 다른 종목 기록까지 (브라우저에 저장된 것)
+  if ($('hideOther').checked || !meta) return trades.map((t) => ({ ...t, symbol: t.symbol || (meta && meta.symbol) }));
+  const out = [];
+  for (let k = 0; k < localStorage.length; k++) {
+    const key = localStorage.key(k);
+    if (!key.startsWith('replay-trades:')) continue;
+    const sym = key.slice(14);
+    if (sym === meta.symbol) continue;
+    try { JSON.parse(localStorage.getItem(key) || '[]').forEach((t) => out.push({ ...t, symbol: t.symbol || sym })); } catch (e) {}
+  }
+  trades.forEach((t) => out.push({ ...t, symbol: t.symbol || meta.symbol }));
+  return out.sort((a, b) => (a.t_out || 0) - (b.t_out || 0));
+}
+function renderBottom() {
+  const el = $('bbody');
+  const nPos = open ? 1 : 0, nOrd = pendEntry ? 1 : 0;
+  document.querySelector('.bt[data-b="pos"]').textContent = `포지션(${nPos})`;
+  document.querySelector('.bt[data-b="ord"]').textContent = `대기 주문(${nOrd})`;
+  $('histFilter').style.display = btab === 'hist' ? 'flex' : 'none';
+  if (btab === 'pos') {
+    if (!open || cursor < 0) { el.innerHTML = '<div class="empty">포지션 없음</div>'; return; }
+    const o = open, p = curPrice(), r = posPnl(o, p), roe = r.net / o.margin * 100, sym = meta.symbol;
+    el.innerHTML = `<table><thead><tr><th>종목</th><th>방향</th><th>수량</th><th>미실현 손익 (ROE)</th><th>진입가</th><th>예상 청산가</th><th>손익분기 가격</th><th>TP/SL</th><th>현재가</th><th>증거금</th><th>진입 시각</th><th>청산</th></tr></thead><tbody><tr>` +
+      `<td>${symTag(sym, o.lev)}</td><td>${sideTxt(o.side)}</td><td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td>` +
+      `<td><b class="${cls(r.net)}">${usdS(r.net)}</b><br><span class="${cls(r.net)}">${sgn(roe)}%</span></td>` +
+      `<td>${fmtP(o.entry)}</td><td class="dim">${fmtP(liqPrice(o))}</td><td>${fmtP(beP(o))}</td>` +
+      `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
+      `<td>${fmtP(p)}</td><td>${usd(o.margin)}</td><td class="dim">${fmtKst(o.t)}</td>` +
+      `<td><button id="bClose">시장가 청산</button></td></tr></tbody></table>`;
+    $('bClose').onclick = () => closePos();
+    return;
+  }
+  if (btab === 'ord') {
+    if (!pendEntry || cursor < 0) { el.innerHTML = '<div class="empty">대기 주문 없음</div>'; return; }
+    const o = pendEntry, sym = meta.symbol;
+    el.innerHTML = `<table><thead><tr><th>종목</th><th>주문 시각</th><th>방향</th><th>종류</th><th>가격</th><th>수량</th><th>증거금</th><th>TP/SL</th><th>지금 가격까지</th><th>취소</th></tr></thead><tbody><tr>` +
+      `<td>${symTag(sym, o.lev)}</td><td class="dim">${fmtKst(o.t)}</td><td>${sideTxt(o.side)}</td><td>지정가</td><td>${fmtP(o.entry)}</td>` +
+      `<td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td><td>${usd(o.margin)}</td>` +
+      `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
+      `<td class="dim">${sgn((o.entry / curPrice() - 1) * 100)}%</td><td><button id="bCancel">취소</button></td></tr></tbody></table>`;
+    $('bCancel').onclick = cancelLimit;
+    return;
+  }
+  // 포지션 기록
+  let list = allTrades().filter((t) => (fSide === 'all' || t.side === fSide));
+  const pnlOf = (t) => (t.pnl != null ? t.pnl : t.net);
+  if (fPnl === 'win') list = list.filter((t) => pnlOf(t) > 0); else if (fPnl === 'loss') list = list.filter((t) => pnlOf(t) <= 0);
+  if (list.length) {
+    const wins = list.filter((t) => pnlOf(t) > 0).length;
+    const sum = list.reduce((a, t) => a + (t.pnl || 0), 0), fees = list.reduce((a, t) => a + (t.fees || 0), 0);
+    $('histSum').innerHTML = `${list.length}회 · 수익 ${wins} / 손실 ${list.length - wins} (승률 ${(wins / list.length * 100).toFixed(0)}%) · 실현 손익 <b class="${cls(sum)}">${usdS(sum)}</b> · 낸 수수료 ${usd(fees)}`;
+  } else $('histSum').textContent = '';
+  if (!list.length) { el.innerHTML = '<div class="empty">기록 없음</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>종목</th><th>방향</th><th>청산 방식</th><th>진입 시각</th><th>진입가</th><th>청산가</th><th>수량</th><th>보유</th><th>실현 손익 / ROE</th><th>수수료</th><th>청산 시각</th></tr></thead><tbody>` +
+    [...list].reverse().map((t, ri) => {
+      const pn = t.pnl, roe = pn != null ? pn / t.margin * 100 : t.net * t.lev;
+      const qty = t.notional && t.entry ? (t.notional / t.entry).toLocaleString('en-US', { maximumFractionDigits: t.notional / t.entry < 10 ? 4 : 0 }) + ' ' + (t.symbol || '').replace(/USDT$/, '').replace(/^KRW-/, '') : '-';
+      const mins = Math.round(((t.t_out || 0) - (t.t_in || 0)) / 60);
+      return `<tr><td class="dim">${list.length - ri}</td><td>${symTag(t.symbol, t.lev)}</td><td>${sideTxt(t.side)}</td><td>${reasonTxt(t)}</td>` +
+        `<td class="dim">${fmtKst(t.t_in)}</td><td>${fmtN(t.entry)}</td><td>${fmtN(t.exit)}</td><td>${qty}</td><td class="dim">${mins < 60 ? mins + '분' : (mins / 60).toFixed(1) + '시간'}</td>` +
+        `<td><b class="${cls(pn ?? t.net)}">${pn != null ? usdS(pn) : '-'}</b><br><span class="${cls(pn ?? t.net)}">${sgn(roe)}%</span></td>` +
+        `<td class="dim">${t.fees != null ? usd(t.fees) : '-'}</td><td class="dim">${fmtKst(t.t_out)}</td></tr>`;
+    }).join('') + '</tbody></table>';
+}
+function renderTrades() { renderBottom(); }
+function renderBottomCounts() {
+  document.querySelector('.bt[data-b="pos"]').textContent = `포지션(${open ? 1 : 0})`;
+  document.querySelector('.bt[data-b="ord"]').textContent = `대기 주문(${pendEntry ? 1 : 0})`;
 }
 
 // ---------------------------------------------------------------- 가상 매매 (화면 표시만, 주문 기능 없음)
@@ -1105,6 +1190,19 @@ $('btnResetBal').onclick = () => {
 };
 ['margin', 'lev', 'fee'].forEach((id) => $(id).addEventListener('input', renderAcct));
 $('btnCsv').onclick = downloadCsv;
+document.querySelectorAll('.btabs .bt').forEach((b) => b.onclick = () => {
+  btab = b.dataset.b;
+  document.querySelectorAll('.btabs .bt').forEach((x) => x.classList.toggle('on', x === b));
+  renderBottom();
+});
+$('hideOther').onchange = (e) => { renderBottom(); e.target.blur(); };
+for (const [id, set] of [['fSide', (v) => (fSide = v)], ['fPnl', (v) => (fPnl = v)]]) {
+  $(id).querySelectorAll('button').forEach((b) => b.onclick = () => {
+    set(b.dataset.v);
+    $(id).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    renderBottom();
+  });
+}
 $('btnClear').onclick = () => {
   if (!confirm('이 데이터의 연습 기록을 모두 지울까요?')) return;
   trades = []; open = null; pendEntry = null; localStorage.removeItem('replay-trades:' + meta.symbol);
