@@ -204,7 +204,7 @@
     <div id="pcBox" style="display:none; flex-direction:column; gap:4px; padding:6px 8px; border:1px solid var(--line); border-radius:4px">
       <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap">
         <b style="font-size:12px">부분 청산</b>
-        <input type="number" id="pcAmt" step="any" min="0" style="width:84px" placeholder="금액"> <span class="dim">USDT</span>
+        <input type="number" id="pcAmt" step="any" min="0" style="width:84px" placeholder="증거금"> <span class="dim">USDT (증거금)</span>
         <button class="pct pcPct" data-p="25">25%</button><button class="pct pcPct" data-p="50">50%</button><button class="pct pcPct" data-p="75">75%</button>
       </div>
       <div style="display:flex; gap:6px; align-items:center">
@@ -685,7 +685,7 @@ function partialClose(amt) {
   const x = partialAt(amt, curPrice());
   $('pcAmt').value = '';
   renderMarkers(); renderPos();
-  flash(`부분 청산 ${usd(x.n)} · ${fmtP(x.p)} · 실현 ${usdS(x.pnl)} · 남은 크기 ${usd(open.notional)}`, 4000);
+  flash(`부분 청산 증거금 ${usd(x.m)} (크기 ${usd(x.n)}) · ${fmtP(x.p)} · 실현 ${usdS(x.pnl)} · 남은 증거금 ${usd(open.margin)}`, 4000);
 }
 // Reduce-Only 지정가: 롱이면 지금보다 위(숏이면 아래)에 걸어 두고, 닿으면 그 가격에 amt 만큼만 청산. 지금보다 유리하지 않은 가격이면 바로 시장가로.
 function placeReduce(amt, px) {
@@ -697,15 +697,19 @@ function placeReduce(amt, px) {
   reduces.push({ id: ++reduceId, price: px, amt, t: nowT() });
   const x = partialPreview(amt, px);
   renderPos();
-  flash(`Reduce-Only 지정가: ${fmtP(px)} 에 ${amt >= open.notional * 0.999 ? '전부' : usd(Math.min(amt, open.notional))} 청산 (닿으면 실현 ${usdS(x.pnl)})`, 4000);
+  flash(`Reduce-Only 지정가: ${fmtP(px)} 에 ${amt >= open.notional * 0.999 ? '전부' : mn(Math.min(amt, open.notional))} 청산 (닿으면 실현 ${usdS(x.pnl)})`, 4000);
 }
 function fillReduce(r) {
   if (r.amt >= open.notional * 0.999) return closePos(r.price, 'reduce');
   const x = partialAt(r.amt, r.price);
   renderMarkers(); stopPlay();
-  flash(`Reduce-Only 지정가 체결 ${fmtP(r.price)} · ${usd(x.n)} 청산 · 실현 ${usdS(x.pnl)} · 남은 크기 ${usd(open.notional)}`, 4000);
+  flash(`Reduce-Only 지정가 체결 ${fmtP(r.price)} · 증거금 ${usd(x.m)} (크기 ${usd(x.n)}) 청산 · 실현 ${usdS(x.pnl)} · 남은 증거금 ${usd(open.margin)}`, 4000);
 }
 function cancelReduce(id) { reduces = reduces.filter((r) => r.id !== id); renderPos(); }
+// 부분 청산·Reduce-Only 금액은 화면에서 '증거금' 기준(진입 칸과 같음). 안에서는 포지션 크기로 바꿔 계산한다.
+const m2n = (m) => (open ? m * open.notional / open.margin : m);
+const n2m = (n) => (open ? n * open.margin / open.notional : n);
+const mn = (n) => `증거금 ${usd(n2m(n))} (크기 ${usd(n)})`;
 const addsOf = (o) => Math.max(0, (o.fills || []).length - 1);
 
 function availBal() { return Math.max(0, acct.balance - (open ? open.margin : 0)); }
@@ -727,12 +731,12 @@ function renderAcct() {
   const maxN = avail / (1 + lev * fee) * lev;
   $('maxL').textContent = $('maxS').textContent = coin(maxN);
   if (document.activeElement !== $('mSlider')) $('mSlider').value = avail > 0 ? Math.min(100, Math.round(m / (avail / (1 + lev * fee)) * 100)) : 0;
-  if ($('roChk').checked) {                 // Reduce-Only: 칸은 '줄일 크기', 슬라이더는 포지션 크기의 %
-    $('mLabel').textContent = '줄일 크기 (포지션 크기 기준, USDT)';
+  if ($('roChk').checked) {                 // Reduce-Only: 칸은 '줄일 증거금', 슬라이더는 지금 증거금의 %
+    $('mLabel').textContent = '줄일 증거금 (USDT)';
     if (open) {
-      $('orderHint').innerHTML = `지금 크기 ${usd(open.notional)} 중 <b>${Math.min(100, m / open.notional * 100).toFixed(1)}%</b>`;
-      $('maxL').textContent = $('maxS').textContent = usd(open.notional);
-      if (document.activeElement !== $('mSlider')) $('mSlider').value = Math.min(100, Math.round(m / open.notional * 100));
+      $('orderHint').innerHTML = `지금 증거금 ${usd(open.margin)} 중 <b>${Math.min(100, m / open.margin * 100).toFixed(1)}%</b> <span class="dim">(크기 ${usd(Math.min(m2n(m), open.notional))})</span>`;
+      $('maxL').textContent = $('maxS').textContent = '증거금 ' + usd(open.margin);
+      if (document.activeElement !== $('mSlider')) $('mSlider').value = Math.min(100, Math.round(m / open.margin * 100));
     } else $('orderHint').innerHTML = '<span class="dim">포지션이 있을 때만 낼 수 있어요</span>';
   } else $('mLabel').textContent = '증거금';
 }
@@ -754,7 +758,7 @@ function syncLines() {
     const o = target();
     if (o && o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
     if (o && o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
-    if (open) for (const r of reduces) linesBy['r' + r.id] = add(r.price, '#f0b90b', LightweightCharts.LineStyle.Dashed, `부분 청산 ${usd(Math.min(r.amt, open.notional))}`);
+    if (open) for (const r of reduces) linesBy['r' + r.id] = add(r.price, '#f0b90b', LightweightCharts.LineStyle.Dashed, `부분 청산 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))}`);
   }
   if (open && entryLine && cursor >= 0) {
     const roe = posPnl(open, curPrice()).net / open.margin * 100;
@@ -794,7 +798,7 @@ function dragItems() {
   }
   if (o.tp != null) items.push({ kind: 'tp', price: o.tp, color: '#42a5f5', label: `익절 ${fmtP(o.tp)}`, x: true });
   if (o.sl != null) items.push({ kind: 'sl', price: o.sl, color: '#ba68c8', label: `손절 ${fmtP(o.sl)}`, x: true });
-  if (open) for (const r of reduces) items.push({ kind: 'r' + r.id, price: r.price, color: '#c99400', label: `부분 청산 ${usd(Math.min(r.amt, open.notional))} ${fmtP(r.price)}`, x: true });
+  if (open) for (const r of reduces) items.push({ kind: 'r' + r.id, price: r.price, color: '#c99400', label: `부분 청산 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))} ${fmtP(r.price)}`, x: true });
   return items;
 }
 function renderChips() {
@@ -929,7 +933,7 @@ function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 �
   if (kind[0] === 'r') {
     const r = reduces.find((x) => 'r' + x.id === kind); if (!r || !open) return;
     const x = partialPreview(r.amt, p);
-    $('ordHint').innerHTML = `부분 청산 ${fmtP(p)} 이면 ${usd(x.n)} 청산 · 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span>`;
+    $('ordHint').innerHTML = `부분 청산 ${fmtP(p)} 이면 증거금 ${usd(x.m)} (크기 ${usd(x.n)}) 청산 · 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span>`;
     return;
   }
   const pnl = pnlAt(o, p);
@@ -938,11 +942,11 @@ function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 �
 
 function renderPcHint() {
   if (!open || cursor < 0) return;
-  const amt = +$('pcAmt').value;
-  if (!(amt > 0)) { $('pcHint').textContent = `지금 크기 ${usd(open.notional)}`; return; }
+  const amt = m2n(+$('pcAmt').value);
+  if (!(amt > 0)) { $('pcHint').textContent = `지금 증거금 ${usd(open.margin)} (크기 ${usd(open.notional)})`; return; }
   if (amt >= open.notional * 0.999) { $('pcHint').textContent = '전부 청산돼요'; return; }
   const x = partialPreview(amt);
-  $('pcHint').innerHTML = `${(x.f * 100).toFixed(1)}% · 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span> · 남는 크기 ${usd(open.notional - x.n)}`;
+  $('pcHint').innerHTML = `${(x.f * 100).toFixed(1)}% (크기 ${usd(x.n)}) · 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span> · 남는 증거금 ${usd(open.margin - x.m)}`;
 }
 function renderPos() {
   renderAcct(); syncLines(); renderOrdHint(); if (!drag) renderChips(); if (btab !== 'hist') renderBottom(); else renderBottomCounts();
@@ -1054,7 +1058,7 @@ function renderBottom() {
     if (open) for (const r of reduces) {
       const n = Math.min(r.amt, open.notional), x = partialPreview(r.amt, r.price);
       rows.push(`<tr><td>${symTag(sym, open.lev)}</td><td class="dim">${fmtKst(r.t)}</td><td>${sideTxt(open.side === 'long' ? 'short' : 'long')}</td><td>지정가 (부분 청산)</td><td>${fmtP(r.price)}</td>` +
-        `<td>${usd(n)}<br><span class="dim">${r.amt >= open.notional * 0.999 ? '전부' : (n / open.notional * 100).toFixed(1) + '%'}</span></td><td class="dim">-</td>` +
+        `<td>크기 ${usd(n)}<br><span class="dim">${r.amt >= open.notional * 0.999 ? '전부' : (n / open.notional * 100).toFixed(1) + '%'}</span></td><td>${usd(n2m(n))}</td>` +
         `<td class="dim">닿으면 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span></td><td style="color:#f0b90b">예</td><td class="dim">${sgn((r.price / curPrice() - 1) * 100)}%</td><td><button data-c="r${r.id}">취소</button></td></tr>`);
     }
     el.innerHTML = `<table><thead><tr><th>종목</th><th>주문 시각</th><th>방향</th><th>종류</th><th>가격</th><th>수량</th><th>증거금</th><th>TP/SL</th><th>Reduce-Only</th><th>지금 가격까지</th><th>취소</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
@@ -1125,7 +1129,7 @@ function submit(side) {
   if ($('roChk').checked) {
     if (!open) { flash('포지션이 없어 Reduce-Only 주문을 낼 수 없어요.'); return; }
     if (side === open.side) { flash(`Reduce-Only 는 포지션을 늘리지 않아요. ${open.side === 'long' ? '롱이면 [매도 (숏)]' : '숏이면 [매수 (롱)]'}으로 내세요.`, 4000); return; }
-    const amt = +$('margin').value;
+    const amt = m2n(+$('margin').value);
     if (orderType === 'market') return partialClose(amt);
     return placeReduce(amt, numOrNull($('entryPx').value));
   }
@@ -1335,18 +1339,18 @@ $('btnPlay').onclick = togglePlay;
 $('btnLong').onclick = () => submit('long');
 $('btnShort').onclick = () => submit('short');
 $('btnLimCancel').onclick = cancelLimit;
-$('btnPartial').onclick = () => partialClose(+$('pcAmt').value);
-$('btnPartialLim').onclick = () => { placeReduce(+$('pcAmt').value, numOrNull($('pcPx').value)); };
+$('btnPartial').onclick = () => partialClose(m2n(+$('pcAmt').value));
+$('btnPartialLim').onclick = () => { placeReduce(m2n(+$('pcAmt').value), numOrNull($('pcPx').value)); };
 $('pcPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >= 0) e.target.value = +curPrice().toFixed(precision); });
 $('roChk').onchange = (e) => {
-  if (e.target.checked && open) $('margin').value = Math.floor(open.notional * 100) / 100;   // 기본은 전부
+  if (e.target.checked && open) $('margin').value = Math.floor(open.margin * 100) / 100;   // 기본은 전부
   renderAcct(); e.target.blur();
 };
 $('pcAmt').addEventListener('input', renderPcHint);
-$('pcAmt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { partialClose(+$('pcAmt').value); e.target.blur(); } });
+$('pcAmt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { partialClose(m2n(+$('pcAmt').value)); e.target.blur(); } });
 document.querySelectorAll('button.pcPct').forEach((b) => b.onclick = () => {
   if (!open) return;
-  $('pcAmt').value = Math.floor(open.notional * b.dataset.p / 100 * 100) / 100; renderPcHint();
+  $('pcAmt').value = Math.floor(open.margin * b.dataset.p / 100 * 100) / 100; renderPcHint();
 });
 document.querySelectorAll('.tabs .tab').forEach((b) => b.onclick = () => {
   orderType = b.dataset.t;
@@ -1360,7 +1364,7 @@ $('entryPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >=
 $('entryPx').addEventListener('input', renderAcct);
 $('tpslChk').onchange = (e) => { $('tpslBox').style.display = e.target.checked ? '' : 'none'; renderOrdHint(); e.target.blur(); };
 const setMarginPct = (pct) => {      // 사용 가능 금액의 pct% 를 증거금으로 (100% 는 진입 수수료 낼 만큼 남김)
-  if ($('roChk').checked && open) { $('margin').value = Math.floor(open.notional * pct / 100 * 100) / 100; renderAcct(); return; }
+  if ($('roChk').checked && open) { $('margin').value = Math.floor(open.margin * pct / 100 * 100) / 100; renderAcct(); return; }
   const lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
   const m = availBal() / (1 + lev * fee) * pct / 100;
   $('margin').value = Math.floor(m * 100) / 100; renderAcct();
