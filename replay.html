@@ -166,7 +166,7 @@
       <div class="inbox dim" id="mktBox" style="display:none">지금 보이는 가격에 바로 체결</div>
     </div>
     <div>
-      <div class="flab">증거금</div>
+      <div class="flab" id="mLabel">증거금</div>
       <div class="inbox"><input type="number" id="margin" value="100" step="10" min="0"><span>USDT</span></div>
     </div>
     <div>
@@ -176,6 +176,7 @@
     <div class="row2"><span class="dim">사용 가능</span><b id="avail"></b></div>
     <div class="row2"><span class="dim">포지션 크기</span><span id="orderHint"></span></div>
     <label class="chk"><input type="checkbox" id="tpslChk"> TP/SL <span class="dim">(익절·손절 지정가)</span></label>
+    <label class="chk" title="포지션을 늘리지 않고 줄이기만 하는 주문. 롱이면 [매도], 숏이면 [매수]로 냄"><input type="checkbox" id="roChk"> Reduce-Only <span class="dim">(포지션 줄이기만 · 부분 익절)</span></label>
     <div id="tpslBox" style="display:none">
       <div class="row2" style="gap:8px; align-items:flex-start">
         <div style="flex:1"><div class="flab">익절가</div><div class="inbox"><input type="number" id="tp" step="any" min="0"></div></div>
@@ -209,6 +210,10 @@
       <div style="display:flex; gap:6px; align-items:center">
         <button id="btnPartial">시장가로 이만큼 청산</button>
         <span class="dim" id="pcHint" style="font-size:12px"></span>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center">
+        <input type="number" id="pcPx" step="any" min="0" style="width:96px" placeholder="지정가">
+        <button id="btnPartialLim" title="Reduce-Only 지정가: 가격이 닿으면 이만큼만 청산">지정가로 걸기 (부분 익절)</button>
       </div>
     </div>
     <h3 style="margin-top:6px">자산 <span class="dim">(가상)</span></h3>
@@ -251,6 +256,8 @@ let agg = [];         // 공개된 1분봉을 묶은 봉
 let trades = [];      // 끝난 가상 매매
 let open = null;      // 열린 가상 포지션
 let pendEntry = null; // 대기 중인 진입 지정가 (open 과 같은 모양, entry = 지정가)
+let reduces = [];     // Reduce-Only 지정가(포지션 줄이기만): [{ id, price, amt(USDT, 포지션 크기 기준), t }]
+let reduceId = 0;
 let orderType = 'limit';  // 주문 칸: 'limit' 지정가 / 'market' 시장가
 let pctPlan = null;   // 방향을 정하기 전에 고른 손익절 ±% (주문할 때 진입가로 계산)
 let timer = null;
@@ -418,7 +425,7 @@ async function maybeLoadNext() {         // 남은 1분봉이 하루치보다 �
 function setBars(b, m) {
   bars = b; meta = m;
   trades = JSON.parse(localStorage.getItem('replay-trades:' + meta.symbol) || '[]');
-  open = null; pendEntry = null;
+  open = null; pendEntry = null; reduces = [];
   // 기본 시작 시각: 고른 달 첫날(KST) 09:00. 앞 달을 함께 읽었으므로 지난 흐름이 보인다.
   const monthStart = m.start ? Date.UTC(+m.start.slice(0, 4), +m.start.slice(5, 7) - 1, +m.start.slice(8, 10)) / 1000 - KST_OFF : bars[0].t;
   const firstIn = bars.find((x) => x.t >= monthStart) || bars[0];
@@ -655,27 +662,50 @@ function addFill(price, o, t) {
   open.peakNotional = Math.max(open.peakNotional || 0, open.notional);
 }
 // 부분 청산: 포지션 크기(진입 금액 기준) 중 amt USDT 만큼을 지금 가격에 줄인다. 평단은 그대로, 증거금·수량은 같은 비율로 줄고, 손익은 바로 잔고에 들어간다.
-function partialPreview(amt) {
-  const f = amt / open.notional, p = curPrice();
+function partialPreview(amt, p = curPrice()) {
+  const f = Math.min(1, amt / open.notional);
   const q = (open.qty || open.notional / open.entry) * f, n = open.notional * f;
   const gross = n * pnlPct(open.side, open.entry, p) / 100, feeIn = n * open.fee / 100, feeOut = q * p * open.fee / 100;
   return { f, p, q, n, m: open.margin * f, pnl: gross - feeIn - feeOut, fees: feeIn + feeOut };
 }
-function partialClose(amt) {
-  if (!open || cursor < 0) { flash('포지션이 없어요.'); return; }
-  if (!(amt > 0)) { flash('줄일 금액을 적어 주세요.'); return; }
-  if (amt >= open.notional * 0.999) return closePos();          // 전부면 그냥 청산
-  const x = partialPreview(amt);
+function partialAt(amt, p) {                // 가격 p 에 amt 만큼 줄이기(전부가 아닐 때)
+  const x = partialPreview(amt, p);
   acct.balance = Math.max(0, acct.balance + x.pnl); saveAcct();
   open.qty = (open.qty || open.notional / open.entry) - x.q;
   open.notional -= x.n; open.margin -= x.m;
   open.realized = (open.realized || 0) + x.pnl;
   open.feesPaid = (open.feesPaid || 0) + x.fees;
   (open.partials = open.partials || []).push({ t: nowT(), price: x.p, qty: x.q, notional: x.n, pnl: x.pnl });
+  return x;
+}
+function partialClose(amt) {
+  if (!open || cursor < 0) { flash('포지션이 없어요.'); return; }
+  if (!(amt > 0)) { flash('줄일 금액을 적어 주세요.'); return; }
+  if (amt >= open.notional * 0.999) return closePos();          // 전부면 그냥 청산
+  const x = partialAt(amt, curPrice());
   $('pcAmt').value = '';
   renderMarkers(); renderPos();
   flash(`부분 청산 ${usd(x.n)} · ${fmtP(x.p)} · 실현 ${usdS(x.pnl)} · 남은 크기 ${usd(open.notional)}`, 4000);
 }
+// Reduce-Only 지정가: 롱이면 지금보다 위(숏이면 아래)에 걸어 두고, 닿으면 그 가격에 amt 만큼만 청산. 지금보다 유리하지 않은 가격이면 바로 시장가로.
+function placeReduce(amt, px) {
+  if (!open || cursor < 0) { flash('포지션이 없어 Reduce-Only 주문을 걸 수 없어요.'); return; }
+  if (!(amt > 0)) { flash('줄일 금액을 적어 주세요.'); return; }
+  if (!px) { flash('지정가를 적어 주세요.'); return; }
+  const long = open.side === 'long', cur = curPrice();
+  if (long ? px <= cur : px >= cur) { flash(`지정가가 지금 가격(${fmtP(cur)})보다 ${long ? '낮아서' : '높아서'} 바로 시장가로 청산해요.`, 3500); return partialClose(amt); }
+  reduces.push({ id: ++reduceId, price: px, amt, t: nowT() });
+  const x = partialPreview(amt, px);
+  renderPos();
+  flash(`Reduce-Only 지정가: ${fmtP(px)} 에 ${amt >= open.notional * 0.999 ? '전부' : usd(Math.min(amt, open.notional))} 청산 (닿으면 실현 ${usdS(x.pnl)})`, 4000);
+}
+function fillReduce(r) {
+  if (r.amt >= open.notional * 0.999) return closePos(r.price, 'reduce');
+  const x = partialAt(r.amt, r.price);
+  renderMarkers(); stopPlay();
+  flash(`Reduce-Only 지정가 체결 ${fmtP(r.price)} · ${usd(x.n)} 청산 · 실현 ${usdS(x.pnl)} · 남은 크기 ${usd(open.notional)}`, 4000);
+}
+function cancelReduce(id) { reduces = reduces.filter((r) => r.id !== id); renderPos(); }
 const addsOf = (o) => Math.max(0, (o.fills || []).length - 1);
 
 function availBal() { return Math.max(0, acct.balance - (open ? open.margin : 0)); }
@@ -697,6 +727,14 @@ function renderAcct() {
   const maxN = avail / (1 + lev * fee) * lev;
   $('maxL').textContent = $('maxS').textContent = coin(maxN);
   if (document.activeElement !== $('mSlider')) $('mSlider').value = avail > 0 ? Math.min(100, Math.round(m / (avail / (1 + lev * fee)) * 100)) : 0;
+  if ($('roChk').checked) {                 // Reduce-Only: 칸은 '줄일 크기', 슬라이더는 포지션 크기의 %
+    $('mLabel').textContent = '줄일 크기 (포지션 크기 기준, USDT)';
+    if (open) {
+      $('orderHint').innerHTML = `지금 크기 ${usd(open.notional)} 중 <b>${Math.min(100, m / open.notional * 100).toFixed(1)}%</b>`;
+      $('maxL').textContent = $('maxS').textContent = usd(open.notional);
+      if (document.activeElement !== $('mSlider')) $('mSlider').value = Math.min(100, Math.round(m / open.notional * 100));
+    } else $('orderHint').innerHTML = '<span class="dim">포지션이 있을 때만 낼 수 있어요</span>';
+  } else $('mLabel').textContent = '증거금';
 }
 
 // 차트 가로선: 평단(롱 초록·숏 빨강 실선), 익절(파랑 점선)·손절(보라 점선) 지정가. 바뀔 때만 다시 그린다.
@@ -705,7 +743,7 @@ let lines = [], linesKey = '', entryLine = null, linesBy = {};
 const target = () => open || pendEntry;     // 손익절을 걸 대상(열린 포지션 또는 대기 중인 진입 지정가)
 function syncLines() {
   const pe = pendEntry;
-  const key = JSON.stringify([open && [open.side, open.entry, open.tp, open.sl], pe && [pe.side, pe.entry, pe.tp, pe.sl]]);
+  const key = JSON.stringify([open && [open.side, open.entry, open.tp, open.sl, open.notional], pe && [pe.side, pe.entry, pe.tp, pe.sl], reduces]);
   if (key !== linesKey) {
     linesKey = key;
     lines.forEach((l) => candle.removePriceLine(l)); lines = []; entryLine = null; linesBy = {};
@@ -716,6 +754,7 @@ function syncLines() {
     const o = target();
     if (o && o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
     if (o && o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
+    if (open) for (const r of reduces) linesBy['r' + r.id] = add(r.price, '#f0b90b', LightweightCharts.LineStyle.Dashed, `부분 청산 ${usd(Math.min(r.amt, open.notional))}`);
   }
   if (open && entryLine && cursor >= 0) {
     const roe = posPnl(open, curPrice()).net / open.margin * 100;
@@ -755,6 +794,7 @@ function dragItems() {
   }
   if (o.tp != null) items.push({ kind: 'tp', price: o.tp, color: '#42a5f5', label: `익절 ${fmtP(o.tp)}`, x: true });
   if (o.sl != null) items.push({ kind: 'sl', price: o.sl, color: '#ba68c8', label: `손절 ${fmtP(o.sl)}`, x: true });
+  if (open) for (const r of reduces) items.push({ kind: 'r' + r.id, price: r.price, color: '#c99400', label: `부분 청산 ${usd(Math.min(r.amt, open.notional))} ${fmtP(r.price)}`, x: true });
   return items;
 }
 function renderChips() {
@@ -844,6 +884,12 @@ document.addEventListener('pointerup', () => {
 // 끌어 놓은 가격 확인: 실제 거래소처럼 방향이 맞을 때만 옮기고, 아니면 제자리로
 function moveOrder(kind, p) {
   const o = target(); if (!o) return;
+  if (kind[0] === 'r') {                     // Reduce-Only 지정가: 롱은 지금보다 위, 숏은 아래로만
+    const r = reduces.find((x) => 'r' + x.id === kind); if (!r || !open) return;
+    const long = open.side === 'long', cur = curPrice();
+    if (long ? p <= cur : p >= cur) { flash(`Reduce-Only 지정가는 지금 가격(${fmtP(cur)})보다 ${long ? '위' : '아래'}로만 옮길 수 있어요.`, 4000); return; }
+    r.price = p; return;
+  }
   const long = o.side === 'long', cur = curPrice();
   if (kind === 'entry') {
     const pe = pendEntry; if (!pe) return;
@@ -865,6 +911,7 @@ function moveOrder(kind, p) {
 function removeOrderLine(kind) {
   const o = target(); if (!o) return;
   if (kind === 'entry') return cancelLimit();
+  if (kind[0] === 'r') return cancelReduce(+kind.slice(1));
   o[kind] = null; renderPos();
 }
 function addTpSlLines() {                    // [TP/SL]: 지금(포지션) 또는 지정가(대기) 기준 ±로 선을 만들고, 끌어서 맞춘다
@@ -879,6 +926,12 @@ function addTpSlLines() {                    // [TP/SL]: 지금(포지션) 또�
 }
 function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 끝나면 손익이 얼마인지
   const o = target(); if (!o || kind === 'entry') return;
+  if (kind[0] === 'r') {
+    const r = reduces.find((x) => 'r' + x.id === kind); if (!r || !open) return;
+    const x = partialPreview(r.amt, p);
+    $('ordHint').innerHTML = `부분 청산 ${fmtP(p)} 이면 ${usd(x.n)} 청산 · 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span>`;
+    return;
+  }
   const pnl = pnlAt(o, p);
   $('ordHint').innerHTML = `${kind === 'tp' ? '익절' : '손절'} ${fmtP(p)} 이면 <span class="${cls(pnl)}">${usdS(pnl)} (ROE ${sgn(pnl / o.margin * 100)}%, 가격 ${sgn(pnlPct(o.side, o.entry, p))}%)</span>`;
 }
@@ -921,7 +974,8 @@ function renderPos() {
     `미실현 손익 <b class="${cls(r.net)}">${usdS(r.net)}</b> <span class="${cls(r.net)}">(ROE ${sgn(r.net / open.margin * 100)}%)</span> <span class="dim">수수료 포함</span><br>` +
     ((open.partials || []).length ? `부분 청산 ${open.partials.length}회 · 실현 손익 <b class="${cls(open.realized)}">${usdS(open.realized)}</b><br>` : '') +
     ordTxt(open) +
-    (pendEntry ? `<br><span class="dim">추가 지정가 대기 ${fmtP(pendEntry.entry)} · 증거금 ${usd(pendEntry.margin)}</span>` : '');
+    (pendEntry ? `<br><span class="dim">추가 지정가 대기 ${fmtP(pendEntry.entry)} · 증거금 ${usd(pendEntry.margin)}</span>` : '') +
+    (reduces.length ? `<br><span style="color:#f0b90b">부분 청산 지정가 ${reduces.length}개</span> <span class="dim">${reduces.map((r) => fmtP(r.price)).join(', ')}</span>` : '');
 }
 
 function renderMarkers() {
@@ -951,7 +1005,7 @@ const fmtN = (x) => (x == null ? '-' : String(+(+x).toPrecision(8)));
 const sideTxt = (side) => `<span class="${side === 'long' ? 'up' : 'down'}">${side === 'long' ? '롱' : '숏'}</span>`;
 const symTag = (sym, lev) => `<b>${sym}</b><br><span class="tag">격리</span><span class="tag">${lev}x</span>`;
 const sizeTxt = (o, sym) => meta && meta.quote === 'USDT' ? `${(o.notional / o.entry).toLocaleString('en-US', { maximumFractionDigits: o.notional / o.entry < 10 ? 4 : 0 })} ${sym.replace(/USDT$/, '')}` : usd(o.notional);
-const reasonTxt = (t) => t.liq ? '<span class="down">강제청산</span>' : t.reason === 'tp' ? '<span style="color:#42a5f5">익절</span>' : t.reason === 'sl' ? '<span style="color:#ba68c8">손절</span>' : '직접 청산';
+const reasonTxt = (t) => t.liq ? '<span class="down">강제청산</span>' : t.reason === 'tp' ? '<span style="color:#42a5f5">익절</span>' : t.reason === 'sl' ? '<span style="color:#ba68c8">손절</span>' : t.reason === 'reduce' ? '<span style="color:#f0b90b">지정가 청산</span>' : '직접 청산';
 function beP(o) { const f = o.fee / 100; return o.side === 'long' ? o.entry * (1 + f) / (1 - f) : o.entry * (1 - f) / (1 + f); }   // 수수료까지 0원이 되는 가격
 function allTrades() {                  // 다른 종목 기록까지 (브라우저에 저장된 것)
   if ($('hideOther').checked || !meta) return trades.map((t) => ({ ...t, symbol: t.symbol || (meta && meta.symbol) }));
@@ -968,7 +1022,7 @@ function allTrades() {                  // 다른 종목 기록까지 (브라우
 }
 function renderBottom() {
   const el = $('bbody');
-  const nPos = open ? 1 : 0, nOrd = pendEntry ? 1 : 0;
+  const nPos = open ? 1 : 0, nOrd = (pendEntry ? 1 : 0) + (open ? reduces.length : 0);
   document.querySelector('.bt[data-b="pos"]').textContent = `포지션(${nPos})`;
   document.querySelector('.bt[data-b="ord"]').textContent = `대기 주문(${nOrd})`;
   $('histFilter').style.display = btab === 'hist' ? 'flex' : 'none';
@@ -988,14 +1042,23 @@ function renderBottom() {
     return;
   }
   if (btab === 'ord') {
-    if (!pendEntry || cursor < 0) { el.innerHTML = '<div class="empty">대기 주문 없음</div>'; return; }
-    const o = pendEntry, sym = meta.symbol;
-    el.innerHTML = `<table><thead><tr><th>종목</th><th>주문 시각</th><th>방향</th><th>종류</th><th>가격</th><th>수량</th><th>증거금</th><th>TP/SL</th><th>지금 가격까지</th><th>취소</th></tr></thead><tbody><tr>` +
-      `<td>${symTag(sym, o.lev)}</td><td class="dim">${fmtKst(o.t)}</td><td>${sideTxt(o.side)}</td><td>${o.add ? '지정가 (추가매수)' : '지정가'}</td><td>${fmtP(o.entry)}</td>` +
-      `<td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td><td>${usd(o.margin)}</td>` +
-      `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
-      `<td class="dim">${sgn((o.entry / curPrice() - 1) * 100)}%</td><td><button id="bCancel">취소</button></td></tr></tbody></table>`;
-    $('bCancel').onclick = cancelLimit;
+    if ((!pendEntry && !reduces.length) || cursor < 0) { el.innerHTML = '<div class="empty">대기 주문 없음</div>'; return; }
+    const sym = meta.symbol, rows = [];
+    if (pendEntry) {
+      const o = pendEntry;
+      rows.push(`<tr><td>${symTag(sym, o.lev)}</td><td class="dim">${fmtKst(o.t)}</td><td>${sideTxt(o.side)}</td><td>${o.add ? '지정가 (추가매수)' : '지정가'}</td><td>${fmtP(o.entry)}</td>` +
+        `<td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td><td>${usd(o.margin)}</td>` +
+        `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
+        `<td class="dim">아니요</td><td class="dim">${sgn((o.entry / curPrice() - 1) * 100)}%</td><td><button data-c="entry">취소</button></td></tr>`);
+    }
+    if (open) for (const r of reduces) {
+      const n = Math.min(r.amt, open.notional), x = partialPreview(r.amt, r.price);
+      rows.push(`<tr><td>${symTag(sym, open.lev)}</td><td class="dim">${fmtKst(r.t)}</td><td>${sideTxt(open.side === 'long' ? 'short' : 'long')}</td><td>지정가 (부분 청산)</td><td>${fmtP(r.price)}</td>` +
+        `<td>${usd(n)}<br><span class="dim">${r.amt >= open.notional * 0.999 ? '전부' : (n / open.notional * 100).toFixed(1) + '%'}</span></td><td class="dim">-</td>` +
+        `<td class="dim">닿으면 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span></td><td style="color:#f0b90b">예</td><td class="dim">${sgn((r.price / curPrice() - 1) * 100)}%</td><td><button data-c="r${r.id}">취소</button></td></tr>`);
+    }
+    el.innerHTML = `<table><thead><tr><th>종목</th><th>주문 시각</th><th>방향</th><th>종류</th><th>가격</th><th>수량</th><th>증거금</th><th>TP/SL</th><th>Reduce-Only</th><th>지금 가격까지</th><th>취소</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+    el.querySelectorAll('button[data-c]').forEach((b) => b.onclick = () => removeOrderLine(b.dataset.c));
     return;
   }
   // 포지션 기록
@@ -1023,7 +1086,7 @@ function renderBottom() {
 function renderTrades() { renderBottom(); }
 function renderBottomCounts() {
   document.querySelector('.bt[data-b="pos"]').textContent = `포지션(${open ? 1 : 0})`;
-  document.querySelector('.bt[data-b="ord"]').textContent = `대기 주문(${pendEntry ? 1 : 0})`;
+  document.querySelector('.bt[data-b="ord"]').textContent = `대기 주문(${(pendEntry ? 1 : 0) + (open ? reduces.length : 0)})`;
 }
 
 // ---------------------------------------------------------------- 가상 매매 (화면 표시만, 주문 기능 없음)
@@ -1059,6 +1122,13 @@ function readTpSl(side, entry, baseName) {
 // 지정가가 지금 가격보다 유리하면(롱인데 더 높게 등) 실제 거래소처럼 바로 지금 가격에 체결한다.
 function submit(side) {
   if (cursor < 0) return;
+  if ($('roChk').checked) {
+    if (!open) { flash('포지션이 없어 Reduce-Only 주문을 낼 수 없어요.'); return; }
+    if (side === open.side) { flash(`Reduce-Only 는 포지션을 늘리지 않아요. ${open.side === 'long' ? '롱이면 [매도 (숏)]' : '숏이면 [매수 (롱)]'}으로 내세요.`, 4000); return; }
+    const amt = +$('margin').value;
+    if (orderType === 'market') return partialClose(amt);
+    return placeReduce(amt, numOrNull($('entryPx').value));
+  }
   const long = side === 'long', cur = curPrice();
   let px = cur, rest = false;
   if (orderType === 'limit') {
@@ -1108,7 +1178,7 @@ function closePos(forcedPrice, reason) {
   const exit = forcedPrice != null ? forcedPrice : curPrice();
   const r = posPnl(open, exit);
   // 격리 마진: 잃을 수 있는 건 증거금 + 진입 수수료까지
-  const pnlLast = Math.max(r.net, -(open.margin + r.feeIn));
+  const pnlLast = Math.max(r.net, -(open.margin + r.feeIn)), exitLast = exit;
   acct.balance = Math.max(0, acct.balance + pnlLast);
   saveAcct();
   // 부분 청산이 있었으면 합쳐서: 손익 = 부분 청산 실현 + 마지막, 청산가 = 수량 가중 평균, ROE = 손익 ÷ 가장 컸을 때 증거금
@@ -1123,13 +1193,14 @@ function closePos(forcedPrice, reason) {
     gross, fee: open.fee, net: pnl / nRec * 100, lev: open.lev, margin: mRec, notional: nRec,
     fees: (liq ? r.feeIn : r.feeIn + r.feeOut) + (open.feesPaid || 0), pnl, balance: acct.balance, liq, reason: reason || 'manual',
     qty: qAll, fills: open.fills || null, partials: parts.length ? parts : null });
-  open = null;
+  open = null; reduces = [];
   localStorage.setItem('replay-trades:' + meta.symbol, JSON.stringify(trades));
   renderMarkers(); renderPos(); renderTrades();
   $('tp').value = ''; $('sl').value = '';
   if (liq) { stopPlay(); flash(`강제 청산됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 5000); }
   else if (reason === 'tp') { stopPlay(); flash(`익절 지정가에 체결됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 4000); }
   else if (reason === 'sl') { stopPlay(); flash(`손절 지정가에 체결됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 4000); }
+  else if (reason === 'reduce') { stopPlay(); flash(`Reduce-Only 지정가로 남은 포지션이 모두 청산됐어요 (${fmtP(exitLast)}). 손익 ${usdS(pnl)}`, 4000); }
 }
 // 새로 공개된 봉(1분봉 또는 1초봉)의 고가·저가가 손절·강제 청산·익절 가격에 닿았는지.
 // 한 봉 안에서 여러 개에 닿으면 순서를 알 수 없으므로 불리한 쪽(손절·강제 청산)을 먼저 본다.
@@ -1163,6 +1234,10 @@ function checkOrders(b) {
   }
   if (long ? b.l <= lp : b.h >= lp) return closePos(lp, 'liq');
   if (open.tp != null && (long ? b.h >= open.tp : b.l <= open.tp)) return closePos(open.tp, 'tp');   // 익절(지정가): 적은 가격 그대로
+  if (reduces.length) {
+    const hit = reduces.filter((r) => (long ? b.h >= r.price : b.l <= r.price)).sort((a, c) => (long ? a.price - c.price : c.price - a.price));
+    for (const r of hit) { if (!open) break; reduces = reduces.filter((x) => x !== r); fillReduce(r); }
+  }
 }
 // 입력 칸 값: 비었으면 null, 숫자가 아니거나 0 이하면 false
 function numOrNull(s) { s = String(s).trim(); if (!s) return null; const v = +s; return isFinite(v) && v > 0 ? v : false; }
@@ -1202,7 +1277,7 @@ function downloadCsv() {
   const rows = trades.map((t, i) => [i + 1, t.symbol, meta.market, t.side === 'long' ? '롱' : '숏', fmtKst(t.t_in), t.entry, fmtKst(t.t_out), t.exit,
     Math.round((t.t_out - t.t_in) / 60), t.lev, f2(t.margin), f2(t.notional), t.gross.toFixed(3), t.fee, f2(t.fees), f2(t.pnl),
     t.pnl != null ? (t.pnl / t.margin * 100).toFixed(2) : '', f2(t.balance), t.liq ? '예' : '',
-    t.liq ? '강제청산' : t.reason === 'tp' ? '익절 지정가' : t.reason === 'sl' ? '손절 지정가' : '직접 청산',
+    t.liq ? '강제청산' : t.reason === 'tp' ? '익절 지정가' : t.reason === 'sl' ? '손절 지정가' : t.reason === 'reduce' ? 'Reduce-Only 지정가' : '직접 청산',
     addsOf(t), (t.fills || []).map((f) => `${fmtKst(f.t)} ${f.price} ${f.notional.toFixed(2)}`).join(' / '),
     (t.partials || []).length, (t.partials || []).map((x) => `${fmtKst(x.t)} ${x.price} ${x.notional.toFixed(2)} ${x.pnl.toFixed(2)}`).join(' / ')]);
   const csv = '﻿' + [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -1261,6 +1336,12 @@ $('btnLong').onclick = () => submit('long');
 $('btnShort').onclick = () => submit('short');
 $('btnLimCancel').onclick = cancelLimit;
 $('btnPartial').onclick = () => partialClose(+$('pcAmt').value);
+$('btnPartialLim').onclick = () => { placeReduce(+$('pcAmt').value, numOrNull($('pcPx').value)); };
+$('pcPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >= 0) e.target.value = +curPrice().toFixed(precision); });
+$('roChk').onchange = (e) => {
+  if (e.target.checked && open) $('margin').value = Math.floor(open.notional * 100) / 100;   // 기본은 전부
+  renderAcct(); e.target.blur();
+};
 $('pcAmt').addEventListener('input', renderPcHint);
 $('pcAmt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { partialClose(+$('pcAmt').value); e.target.blur(); } });
 document.querySelectorAll('button.pcPct').forEach((b) => b.onclick = () => {
@@ -1279,6 +1360,7 @@ $('entryPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >=
 $('entryPx').addEventListener('input', renderAcct);
 $('tpslChk').onchange = (e) => { $('tpslBox').style.display = e.target.checked ? '' : 'none'; renderOrdHint(); e.target.blur(); };
 const setMarginPct = (pct) => {      // 사용 가능 금액의 pct% 를 증거금으로 (100% 는 진입 수수료 낼 만큼 남김)
+  if ($('roChk').checked && open) { $('margin').value = Math.floor(open.notional * pct / 100 * 100) / 100; renderAcct(); return; }
   const lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
   const m = availBal() / (1 + lev * fee) * pct / 100;
   $('margin').value = Math.floor(m * 100) / 100; renderAcct();
@@ -1325,7 +1407,7 @@ for (const [id, set] of [['fSide', (v) => (fSide = v)], ['fPnl', (v) => (fPnl = 
 }
 $('btnClear').onclick = () => {
   if (!confirm('이 데이터의 연습 기록을 모두 지울까요?')) return;
-  trades = []; open = null; pendEntry = null; localStorage.removeItem('replay-trades:' + meta.symbol);
+  trades = []; open = null; pendEntry = null; reduces = []; localStorage.removeItem('replay-trades:' + meta.symbol);
   renderTrades(); renderMarkers(); renderPos();
 };
 document.addEventListener('keydown', (e) => {
