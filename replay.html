@@ -21,15 +21,35 @@
   #info b { color:#fff; }
   .up { color:var(--up); } .down { color:var(--down); } .dim { color:var(--dim); }
   #main { flex:1; display:flex; min-height:0; }
-  #chart { flex:1; min-width:0; position:relative; }
+  #chart { flex:1; min-width:0; position:relative; overflow:hidden; }
   #legend { position:absolute; top:6px; left:8px; z-index:5; pointer-events:none; font-size:13px; font-variant-numeric: tabular-nums;
-            background:rgba(19,23,34,.75); padding:3px 6px; border-radius:4px; white-space:nowrap; }
+            background:rgba(19,23,34,.75); padding:3px 6px; border-radius:4px; max-width:calc(100% - 90px); }
   #legend .k { color:var(--dim); margin-left:8px; } #legend .k:first-child { margin-left:0; }
   #side { width:340px; border-left:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; padding:10px; gap:8px; overflow:auto; }
   #side h3 { margin:4px 0; font-size:13px; }
   button.pct { padding:2px 6px; font-size:12px; margin-left:2px; }
   #acct { padding:8px; border:1px solid var(--line); border-radius:4px; line-height:1.6; font-variant-numeric: tabular-nums; }
   #ordBox { padding:6px 8px; border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; gap:5px; }
+  .otop { display:flex; gap:8px; align-items:center; }
+  .chip { background:#262b3c; border-radius:4px; padding:4px 8px; font-weight:600; white-space:nowrap; }
+  .chip input.levIn { width:40px; padding:0 2px; background:transparent; border:none; font-weight:600; text-align:right; }
+  .tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); }
+  .tabs .tab { background:none; border:none; border-bottom:2px solid transparent; border-radius:0; padding:6px 1px; color:var(--dim); font-size:14px; }
+  .tabs .tab.on { color:#fff; border-bottom-color:#fff; }
+  .flab { color:var(--dim); font-size:12px; margin-bottom:3px; }
+  .inbox { display:flex; align-items:center; gap:6px; background:#262b3c; border:1px solid #363c4e; border-radius:6px; padding:0 9px; height:36px; }
+  .inbox:focus-within { border-color:#5a6175; }
+  .inbox input { flex:1; min-width:0; background:transparent; border:none; padding:0; font-size:14px; outline:none; }
+  button.link { background:none; border:none; color:#5b8def; padding:0; }
+  input[type=range] { width:100%; margin:2px 0; accent-color:#d1d4dc; padding:0; }
+  .ticks { display:flex; justify-content:space-between; }
+  .ticks button { background:none; border:none; color:var(--dim); padding:0; font-size:11px; }
+  .row2 { display:flex; justify-content:space-between; align-items:center; font-variant-numeric:tabular-nums; }
+  label.chk { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  label.chk input { margin:0; }
+  button.big { flex:1; border:none; border-radius:20px; height:40px; font-size:15px; font-weight:600; color:#fff; }
+  button.big.buy { background:#2ebd85; } button.big.sell { background:#e5546a; }
+  button.big:hover { filter:brightness(1.08); }
   #pos { padding:8px; border:1px solid var(--line); border-radius:4px; font-variant-numeric: tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric: tabular-nums; }
   th, td { padding:3px 4px; border-bottom:1px solid var(--line); text-align:right; }
@@ -93,43 +113,62 @@
 <div id="main">
   <div id="chart"><div id="legend"></div></div>
   <div id="side">
-    <h3>가상 연습 계좌 <span class="dim">(실제 주문 아님)</span></h3>
-    <div id="acct"></div>
-    <div>
-      <label class="dim">시작 잔고</label> <input type="number" id="startBal" value="1000" step="100" min="1" style="width:76px"> <span class="dim">USDT</span>
-      <button id="btnResetBal" title="잔고를 시작 잔고로 되돌림 (기록은 그대로)">잔고 초기화</button>
+    <div class="otop">
+      <span class="chip" title="손실이 증거금까지만 나는 격리 마진으로 계산해요">격리</span>
+      <span class="chip">레버리지 <input type="number" id="lev" class="levIn" value="10" step="1" min="1" max="125">x</span>
+      <span class="dim" style="font-size:11px; margin-left:auto">가상 연습 · 실제 주문 아님</span>
+    </div>
+    <div class="tabs">
+      <button class="tab on" data-t="limit">지정가</button>
+      <button class="tab" data-t="market">시장가</button>
     </div>
     <div>
-      <label class="dim">증거금</label> <input type="number" id="margin" value="100" step="10" min="0" style="width:76px"> <span class="dim">USDT</span>
-      <button class="pct" data-p="10">10%</button><button class="pct" data-p="25">25%</button><button class="pct" data-p="50">50%</button><button class="pct" data-p="100">전부</button>
+      <div class="flab">가격</div>
+      <div class="inbox" id="pxBox"><input type="number" id="entryPx" step="any" min="0" placeholder="진입할 가격"><button class="link" id="btnLast" title="지금 보이는 마지막 가격으로 채우기">현재가</button></div>
+      <div class="inbox dim" id="mktBox" style="display:none">지금 보이는 가격에 바로 체결</div>
     </div>
     <div>
-      <label class="dim">레버리지</label> <input type="number" id="lev" value="10" step="1" min="1" max="125" style="width:52px">
-      <label class="dim">편도 수수료 %</label> <input type="number" id="fee" value="0.05" step="0.01" min="0" style="width:60px">
+      <div class="flab">증거금</div>
+      <div class="inbox"><input type="number" id="margin" value="100" step="10" min="0"><span>USDT</span></div>
     </div>
-    <div class="dim" id="orderHint"></div>
-    <div style="display:flex; gap:6px;">
-      <button class="long" id="btnLong">롱 진입 <kbd>B</kbd></button>
-      <button class="short" id="btnShort">숏 진입 <kbd>S</kbd></button>
-      <button id="btnClose">청산 <kbd>X</kbd></button>
+    <div>
+      <input type="range" id="mSlider" min="0" max="100" step="1" value="0" title="사용 가능 금액 중 몇 %를 증거금으로">
+      <div class="ticks"><button data-p="0">0%</button><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="75">75%</button><button data-p="100">100%</button></div>
     </div>
-    <div id="ordBox">
-      <div><b style="font-size:12px">손익절 지정가</b> <span class="dim" style="font-size:12px">(포지션을 잡은 뒤 걸어 둠)</span></div>
-      <div>
-        <label class="dim">익절가</label> <input type="number" id="tp" step="any" min="0" style="width:92px">
-        <label class="dim">손절가</label> <input type="number" id="sl" step="any" min="0" style="width:92px">
+    <div class="row2"><span class="dim">사용 가능</span><b id="avail"></b></div>
+    <div class="row2"><span class="dim">포지션 크기</span><span id="orderHint"></span></div>
+    <label class="chk"><input type="checkbox" id="tpslChk"> TP/SL <span class="dim">(익절·손절 지정가)</span></label>
+    <div id="tpslBox" style="display:none">
+      <div class="row2" style="gap:8px; align-items:flex-start">
+        <div style="flex:1"><div class="flab">익절가</div><div class="inbox"><input type="number" id="tp" step="any" min="0"></div></div>
+        <div style="flex:1"><div class="flab">손절가</div><div class="inbox"><input type="number" id="sl" step="any" min="0"></div></div>
       </div>
-      <div style="font-size:12px"><span class="dim">평단에서 ±</span>
+      <div style="font-size:12px; margin-top:5px"><span class="dim">진입가에서 ±</span>
         <button class="pct ordPct" data-p="0.5">0.5%</button><button class="pct ordPct" data-p="1">1%</button><button class="pct ordPct" data-p="2">2%</button><button class="pct ordPct" data-p="3">3%</button>
-        <span class="dim">로 채우기</span>
       </div>
-      <div style="display:flex; gap:6px;">
-        <button id="btnSetOrd">지정가 걸기</button>
-        <button id="btnCancelOrd">지정가 취소</button>
+      <div class="dim" id="ordHint" style="font-size:12px; margin-top:5px"></div>
+      <div id="tpslEdit" style="display:none; gap:6px; margin-top:5px">
+        <button id="btnSetOrd">지금 포지션·주문에 적용</button>
+        <button id="btnCancelOrd">손익절 취소</button>
       </div>
-      <div class="dim" id="ordHint" style="font-size:12px"></div>
     </div>
+    <div style="display:flex; gap:10px">
+      <button class="big buy" id="btnLong">매수 (롱)</button>
+      <button class="big sell" id="btnShort">매도 (숏)</button>
+    </div>
+    <div class="row2" style="font-size:12px"><span><span class="dim">최대</span> <span id="maxL"></span></span><span><span class="dim">최대</span> <span id="maxS"></span></span></div>
     <div id="pos" class="dim">포지션 없음</div>
+    <div id="posBtns" style="display:none; gap:6px">
+      <button id="btnClose">청산 <kbd>X</kbd></button>
+      <button id="btnLimCancel">대기 주문 취소</button>
+    </div>
+    <h3 style="margin-top:6px">자산 <span class="dim">(가상)</span></h3>
+    <div id="acct"></div>
+    <div style="font-size:12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+      <label class="dim">시작 잔고</label> <input type="number" id="startBal" value="1000" step="100" min="1" style="width:70px">
+      <button id="btnResetBal" title="잔고를 시작 잔고로 되돌림 (기록은 그대로)">잔고 초기화</button>
+      <label class="dim">편도 수수료 %</label> <input type="number" id="fee" value="0.05" step="0.01" min="0" style="width:54px">
+    </div>
     <div id="summary" class="dim"></div>
     <div style="display:flex; gap:6px;">
       <button id="btnCsv">기록 CSV 저장</button>
@@ -141,9 +180,10 @@
     </table>
     <div class="help">
       <kbd>→</kbd> 한 봉 · <kbd>Shift</kbd>+<kbd>→</kbd> 10봉 · <kbd>←</kbd> 한 봉 뒤로 · <kbd>스페이스</kbd> 재생/멈춤<br>
-      <kbd>B</kbd> 롱 · <kbd>S</kbd> 숏 · <kbd>X</kbd> 청산 (지금 보이는 마지막 1분봉 종가 기준)<br>
-      차트의 가로선: 초록 실선 = 롱 평단, 빨강 실선 = 숏 평단, 파랑 점선 = 익절 지정가, 보라 점선 = 손절 지정가.<br>
-      지정가는 다음에 공개되는 봉의 고가·저가가 닿으면 체결됩니다. 익절은 적은 가격 그대로, 손절은 봉이 그 가격을 이미 넘어서 시작하면 그 봉의 시가로 체결됩니다.
+      <kbd>B</kbd> 매수(롱) · <kbd>S</kbd> 매도(숏) (위에서 고른 지정가·시장가로) · <kbd>X</kbd> 청산(지금 가격)<br>
+      시장가 = 지금 보이는 마지막 가격. 지정가 = 롱은 지금보다 낮게, 숏은 높게 걸어 두면 다음에 공개되는 봉이 닿을 때 그 가격에 진입(지금보다 유리한 가격을 적으면 바로 지금 가격에 체결).<br>
+      차트의 가로선: 초록 실선 = 롱 평단, 빨강 실선 = 숏 평단(옆에 지금 ROE%, 수수료 포함), 점선 = 진입 대기 지정가, 파랑 점선 = 익절, 보라 점선 = 손절.<br>
+      익절·손절은 다음에 공개되는 봉의 고가·저가가 닿으면 체결됩니다. 익절은 적은 가격 그대로, 손절은 봉이 그 가격을 이미 넘어서 시작하면 그 봉의 시가로 체결됩니다.
       한 봉 안에서 익절가와 손절가에 모두 닿으면 어느 쪽이 먼저인지 알 수 없어 <b>손절로</b> 처리합니다(1초씩 넘기면 이런 경우가 줄어듭니다).<br>
       거래량 막대: 초록 = 시장가 매수 체결, 빨강 = 시장가 매도 체결(바이낸스 체결 기록 기준. 업비트 종목은 구분 없이 한 색).<br>
       시각은 모두 KST. 시작 시각 뒤의 봉은 숨겨져 있고, 3분·5분·15분·1시간 봉은 공개된 1분봉까지만 묶어서 그립니다.
@@ -170,6 +210,9 @@ let tfSec = 300;
 let agg = [];         // 공개된 1분봉을 묶은 봉
 let trades = [];      // 끝난 가상 매매
 let open = null;      // 열린 가상 포지션
+let pendEntry = null; // 대기 중인 진입 지정가 (open 과 같은 모양, entry = 지정가)
+let orderType = 'limit';  // 주문 칸: 'limit' 지정가 / 'market' 시장가
+let pctPlan = null;   // 방향을 정하기 전에 고른 손익절 ±% (주문할 때 진입가로 계산)
 let timer = null;
 let precision = 4;
 
@@ -373,7 +416,7 @@ async function maybeLoadNext() {         // 남은 1분봉이 하루치보다 �
 function setBars(b, m) {
   bars = b; meta = m;
   trades = JSON.parse(localStorage.getItem('replay-trades:' + meta.symbol) || '[]');
-  open = null;
+  open = null; pendEntry = null;
   // 기본 시작 시각: 고른 달 첫날(KST) 09:00. 앞 달을 함께 읽었으므로 지난 흐름이 보인다.
   const monthStart = m.start ? Date.UTC(+m.start.slice(0, 4), +m.start.slice(5, 7) - 1, +m.start.slice(8, 10)) / 1000 - KST_OFF : bars[0].t;
   const firstIn = bars.find((x) => x.t >= monthStart) || bars[0];
@@ -599,6 +642,7 @@ function posPnl(pos, p) {
 }
 const liqPrice = (pos) => pos.side === 'long' ? pos.entry * (1 - 1 / pos.lev) : pos.entry * (1 + 1 / pos.lev);
 
+function availBal() { return Math.max(0, acct.balance - (open ? open.margin : 0)); }
 function renderAcct() {
   const u = open && cursor >= 0 ? posPnl(open, curPrice()).net : 0;
   const eq = acct.balance + u;
@@ -607,43 +651,77 @@ function renderAcct() {
     `<div style="font-size:15px">평가 잔고 <b>${usd(eq)}</b></div>` +
     `<div>잔고 ${usd(acct.balance)}${open ? ` · 사용 중 증거금 ${usd(open.margin)} · 주문 가능 ${usd(acct.balance - open.margin)}` : ''}</div>` +
     `<div>미실현 손익 <span class="${cls(u)}">${usdS(u)}</span> · 시작 대비 <span class="${cls(tot)}">${usdS(tot)} (${sgn(tot / acct.start * 100)}%)</span></div>`;
-  const m = +$('margin').value || 0, lev = +$('lev').value || 1;
-  $('orderHint').textContent = `포지션 크기 ${usd(m * lev)} (증거금 ${usd(m)} × ${lev}배)` +
-    (cursor >= 0 && meta && meta.quote === 'USDT' ? ` ≈ ${(m * lev / curPrice()).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${meta.symbol.replace(/USDT$/, '')}` : '');
+  const m = +$('margin').value || 0, lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
+  const avail = availBal();
+  $('avail').textContent = usd(avail);
+  const base = meta ? meta.symbol.replace(/^1000/, '1000 ').replace(/(USDT|KRW-)/, '') : '';
+  const px = cursor >= 0 ? (orderType === 'limit' && numOrNull($('entryPx').value) ? +$('entryPx').value : curPrice()) : 0;
+  const coin = (usdt) => px > 0 && meta && meta.quote === 'USDT' ? `${(usdt / px).toLocaleString('en-US', { maximumFractionDigits: usdt / px < 10 ? 4 : 0 })} ${base}` : usd(usdt);
+  $('orderHint').innerHTML = `${usd(m * lev)} <span class="dim">(${usd(m)} × ${lev}배${px > 0 && meta && meta.quote === 'USDT' ? ' ≈ ' + coin(m * lev) : ''})</span>`;
+  const maxN = avail / (1 + lev * fee) * lev;
+  $('maxL').textContent = $('maxS').textContent = coin(maxN);
+  if (document.activeElement !== $('mSlider')) $('mSlider').value = avail > 0 ? Math.min(100, Math.round(m / (avail / (1 + lev * fee)) * 100)) : 0;
 }
 
 // 차트 가로선: 평단(롱 초록·숏 빨강 실선), 익절(파랑 점선)·손절(보라 점선) 지정가. 바뀔 때만 다시 그린다.
-let lines = [], linesKey = '';
+// 진입 지정가가 대기 중이면 같은 색 점선. 평단선 이름 옆에는 지금 ROE%(수수료 포함)를 붙인다.
+let lines = [], linesKey = '', entryLine = null;
+const target = () => open || pendEntry;     // 손익절을 걸 대상(열린 포지션 또는 대기 중인 진입 지정가)
 function syncLines() {
-  const key = open ? [open.side, open.entry, open.tp, open.sl].join('|') : '';
-  if (key === linesKey) return;
-  linesKey = key;
-  lines.forEach((l) => candle.removePriceLine(l)); lines = [];
-  if (!open) return;
-  const long = open.side === 'long';
-  const add = (price, color, style, title) => lines.push(candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
-  add(open.entry, long ? '#26a69a' : '#ef5350', LightweightCharts.LineStyle.Solid, (long ? '롱' : '숏') + ' 평단');
-  if (open.tp != null) add(open.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
-  if (open.sl != null) add(open.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
+  const o = target();
+  const key = o ? [!!open, o.side, o.entry, o.tp, o.sl].join('|') : '';
+  if (key !== linesKey) {
+    linesKey = key;
+    lines.forEach((l) => candle.removePriceLine(l)); lines = []; entryLine = null;
+    if (o) {
+      const long = o.side === 'long';
+      const add = (price, color, style, title) => { const l = candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }); lines.push(l); return l; };
+      entryLine = add(o.entry, long ? '#26a69a' : '#ef5350', open ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+        (long ? '롱' : '숏') + (open ? ' 평단' : ' 지정가 대기'));
+      if (o.tp != null) add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
+      if (o.sl != null) add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
+    }
+  }
+  if (open && entryLine && cursor >= 0) {
+    const roe = posPnl(open, curPrice()).net / open.margin * 100;
+    entryLine.applyOptions({ title: `${open.side === 'long' ? '롱' : '숏'} 평단 ${sgn(roe)}%` });
+  }
 }
 // 가격 p 에서 끝냈을 때의 손익(격리 마진: 증거금 + 진입 수수료까지만 잃음)
 function pnlAt(pos, p) { const r = posPnl(pos, p); return Math.max(r.net, -(pos.margin + r.feeIn)); }
 function renderOrdHint() {
   const el = $('ordHint');
-  if (!open || cursor < 0) { el.textContent = '포지션을 잡으면 익절가·손절가를 적고 [지정가 걸기]를 누르세요.'; return; }
+  const o = target();
+  $('tpslEdit').style.display = o ? 'flex' : 'none';
+  if (!o || cursor < 0) {
+    el.textContent = pctPlan != null ? `주문할 때 진입가 ±${pctPlan * 100}% 로 익절·손절이 정해져요.` : '익절가·손절가를 적고 매수(롱)/매도(숏)을 누르면 주문과 함께 걸려요. 한쪽만 적어도 돼요.';
+    return;
+  }
   const parts = [];
   for (const [id, name] of [['tp', '익절'], ['sl', '손절']]) {
     const v = numOrNull($(id).value);
     if (v == null || v === false) continue;
-    const pnl = pnlAt(open, v);
-    parts.push(`${name} ${fmtP(v)} 이면 <span class="${cls(pnl)}">${usdS(pnl)} (ROE ${sgn(pnl / open.margin * 100)}%, 가격 ${sgn(pnlPct(open.side, open.entry, v))}%)</span>`);
+    const pnl = pnlAt(o, v);
+    parts.push(`${name} ${fmtP(v)} 이면 <span class="${cls(pnl)}">${usdS(pnl)} (ROE ${sgn(pnl / o.margin * 100)}%, 가격 ${sgn(pnlPct(o.side, o.entry, v))}%)</span>`);
   }
-  el.innerHTML = parts.length ? '적은 값 기준: ' + parts.join('<br>') : '익절가·손절가를 적으면 예상 손익이 여기 나옵니다(수수료 포함).';
+  el.innerHTML = parts.length ? '적은 값 기준: ' + parts.join('<br>') : '익절가·손절가를 적으면 예상 손익이 여기 나와요(수수료 포함).';
 }
 function renderPos() {
   renderAcct(); syncLines(); renderOrdHint();
   if (Date.now() < flashUntil) return;
   const el = $('pos');
+  const ordTxt = (o) => `걸린 손익절: 익절 ${o.tp != null ? `<span style="color:#42a5f5">${fmtP(o.tp)}</span>` : '<span class="dim">없음</span>'} · ` +
+    `손절 ${o.sl != null ? `<span style="color:#ba68c8">${fmtP(o.sl)}</span>` : '<span class="dim">없음</span>'}`;
+  $('posBtns').style.display = (open || pendEntry) && cursor >= 0 ? 'flex' : 'none';
+  $('btnClose').style.display = open ? '' : 'none';
+  $('btnLimCancel').style.display = pendEntry ? '' : 'none';
+  if (!open && pendEntry && cursor >= 0) {
+    const pe = pendEntry, long = pe.side === 'long';
+    el.className = '';
+    el.innerHTML = `<b class="${long ? 'up' : 'down'}">${long ? '롱' : '숏'} ${pe.lev}배 지정가 대기</b> ${fmtP(pe.entry)} <span class="dim">(${fmtKst(pe.t)} 주문)</span><br>` +
+      `크기 ${usd(pe.notional)} · 증거금 ${usd(pe.margin)}<br>지금 ${fmtP(curPrice())} <span class="dim">(지정가까지 ${sgn((pe.entry / curPrice() - 1) * 100)}%)</span><br>` + ordTxt(pe);
+    return;
+  }
   if (!open || cursor < 0) { el.className = 'dim'; el.textContent = '포지션 없음'; return; }
   const p = curPrice();
   const g = pnlPct(open.side, open.entry, p);
@@ -653,8 +731,7 @@ function renderPos() {
     `크기 ${usd(open.notional)} · 증거금 ${usd(open.margin)} · <span class="dim">강제 청산가 ≈ ${fmtP(liqPrice(open))}</span><br>` +
     `지금 ${fmtP(p)} · 가격 <span class="${cls(g)}">${sgn(g)}%</span><br>` +
     `미실현 손익 <b class="${cls(r.net)}">${usdS(r.net)}</b> <span class="${cls(r.net)}">(ROE ${sgn(r.net / open.margin * 100)}%)</span> <span class="dim">수수료 포함</span><br>` +
-    `걸린 지정가: 익절 ${open.tp != null ? `<span style="color:#42a5f5">${fmtP(open.tp)}</span>` : '<span class="dim">없음</span>'} · ` +
-    `손절 ${open.sl != null ? `<span style="color:#ba68c8">${fmtP(open.sl)}</span>` : '<span class="dim">없음</span>'}`;
+    ordTxt(open);
 }
 
 function renderMarkers() {
@@ -694,15 +771,60 @@ function renderTrades() {
 }
 
 // ---------------------------------------------------------------- 가상 매매 (화면 표시만, 주문 기능 없음)
-function enter(side) {
-  if (cursor < 0) return;
-  if (open) { flash(`이미 ${open.side === 'long' ? '롱' : '숏'} 포지션이 있어요. 먼저 청산(X)하세요.`); return; }
+// 진입 공통 확인: 포지션·대기 주문이 없고, 증거금·잔고가 맞으면 {fee, lev, margin, notional}
+function orderBase() {
+  if (open) { flash(`이미 ${open.side === 'long' ? '롱' : '숏'} 포지션이 있어요. 먼저 청산(X)하세요.`); return null; }
+  if (pendEntry) { flash('대기 중인 지정가 주문이 있어요. 먼저 [대기 주문 취소]를 누르세요.'); return null; }
   const margin = +$('margin').value || 0, lev = Math.max(1, +$('lev').value || 1), fee = +$('fee').value || 0;
-  if (margin <= 0) { flash('증거금을 적어 주세요.'); return; }
+  if (margin <= 0) { flash('증거금을 적어 주세요.'); return null; }
   const notional = margin * lev;
-  if (margin + notional * fee / 100 > acct.balance + 1e-9) { flash(`잔고가 모자라요. 잔고 ${usd(acct.balance)} (진입 수수료 포함)`); return; }
-  open = { side, entry: curPrice(), t: nowT(), fee, lev, margin, notional };
+  if (margin + notional * fee / 100 > acct.balance + 1e-9) { flash(`잔고가 모자라요. 잔고 ${usd(acct.balance)} (진입 수수료 포함)`); return null; }
+  return { fee, lev, margin, notional };
+}
+// 손익절 칸 읽기: 진입가 entry 기준으로 방향 확인. 잘못이면 null 을 돌려주고 안내
+function readTpSl(side, entry, baseName) {
+  const out = { tp: null, sl: null };
+  if (!$('tpslChk').checked) return out;
+  let tp = numOrNull($('tp').value), sl = numOrNull($('sl').value);
+  if (tp === false || sl === false) { flash('익절가·손절가는 0보다 큰 숫자로 적어 주세요.'); return null; }
+  const long = side === 'long';
+  if (tp == null && sl == null && pctPlan != null) {      // ±% 만 골라 둔 경우
+    const r = (x) => +x.toFixed(precision);
+    tp = r(entry * (long ? 1 + pctPlan : 1 - pctPlan)); sl = r(entry * (long ? 1 - pctPlan : 1 + pctPlan));
+  }
+  if (tp != null && (long ? tp <= entry : tp >= entry)) { flash(`${long ? '롱' : '숏'} 익절가는 ${baseName}(${fmtP(entry)})보다 ${long ? '높게' : '낮게'} 적어 주세요.`, 4000); return null; }
+  if (sl != null && (long ? sl >= entry : sl <= entry)) { flash(`${long ? '롱' : '숏'} 손절가는 ${baseName}(${fmtP(entry)})보다 ${long ? '낮게' : '높게'} 적어 주세요.`, 4000); return null; }
+  out.tp = tp; out.sl = sl;
+  return out;
+}
+// 매수(롱)/매도(숏): 시장가는 지금 가격에 바로, 지정가는 롱은 지금보다 낮게·숏은 높게 걸어 둔다.
+// 지정가가 지금 가격보다 유리하면(롱인데 더 높게 등) 실제 거래소처럼 바로 지금 가격에 체결한다.
+function submit(side) {
+  if (cursor < 0) return;
+  const long = side === 'long', cur = curPrice();
+  let px = cur, rest = false;
+  if (orderType === 'limit') {
+    const v = numOrNull($('entryPx').value);
+    if (!v) { flash('지정가를 적어 주세요. [현재가]를 누르면 지금 가격이 채워져요.'); return; }
+    rest = long ? v < cur : v > cur;
+    if (rest) px = v;
+  }
+  const o = orderBase(); if (!o) return;
+  const ts = readTpSl(side, px, rest ? '지정가' : '진입가'); if (!ts) return;
+  const ord = { side, entry: px, t: nowT(), ...o, ...ts };
+  if (rest) { pendEntry = ord; flash(`${long ? '롱' : '숏'} 지정가 주문을 걸었어요 (${fmtP(px)}). 가격이 닿으면 진입해요.`, 3000); }
+  else {
+    open = ord;
+    if (orderType === 'limit') flash(`지정가가 지금 가격보다 유리해서 바로 체결됐어요 (${fmtP(cur)}).`, 3000);
+  }
+  const lp = liqPrice(ord);
+  if (ts.sl != null && (long ? ts.sl <= lp : ts.sl >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
+  pctPlan = null; $('tp').value = ''; $('sl').value = '';
   renderMarkers(); renderPos();
+}
+function cancelLimit() {
+  if (!pendEntry) { flash('대기 중인 지정가 주문이 없어요.'); return; }
+  pendEntry = null; renderPos();
 }
 // reason: 없음 = 직접 청산(X), 'tp' = 익절 지정가, 'sl' = 손절 지정가, 'liq' = 강제 청산
 function closePos(forcedPrice, reason) {
@@ -729,6 +851,17 @@ function closePos(forcedPrice, reason) {
 // 새로 공개된 봉(1분봉 또는 1초봉)의 고가·저가가 손절·강제 청산·익절 가격에 닿았는지.
 // 한 봉 안에서 여러 개에 닿으면 순서를 알 수 없으므로 불리한 쪽(손절·강제 청산)을 먼저 본다.
 function checkOrders(b) {
+  if (!open && pendEntry) {
+    const pe = pendEntry, long = pe.side === 'long';
+    if (long ? b.l <= pe.entry : b.h >= pe.entry) {
+      pendEntry = null;
+      if (pe.margin + pe.notional * pe.fee / 100 > acct.balance + 1e-9) { stopPlay(); flash('지정가에 닿았지만 잔고가 모자라 주문을 취소했어요.', 4000); return; }
+      open = { ...pe, t: b.t };          // 지정가 그대로 진입. 손익절은 다음 봉부터 본다
+      renderMarkers(); stopPlay();
+      flash(`${long ? '롱' : '숏'} 지정가에 진입했어요 (${fmtP(pe.entry)}).`, 3000);
+    }
+    return;
+  }
   if (!open) return;
   const long = open.side === 'long';
   const lp = liqPrice(open);
@@ -743,21 +876,24 @@ function checkOrders(b) {
 // 입력 칸 값: 비었으면 null, 숫자가 아니거나 0 이하면 false
 function numOrNull(s) { s = String(s).trim(); if (!s) return null; const v = +s; return isFinite(v) && v > 0 ? v : false; }
 function setOrders() {
-  if (!open || cursor < 0) { flash('포지션을 먼저 잡은 뒤 지정가를 걸어 주세요.'); return; }
+  const o = target();
+  if (!o || cursor < 0) { flash('포지션이나 대기 주문이 있을 때 적용할 수 있어요.'); return; }
   const tp = numOrNull($('tp').value), sl = numOrNull($('sl').value);
   if (tp === false || sl === false) { flash('가격은 0보다 큰 숫자로 적어 주세요.'); return; }
   if (tp == null && sl == null) { flash('익절가나 손절가를 적어 주세요.'); return; }
-  const p = curPrice(), long = open.side === 'long';
-  if (tp != null && (long ? tp <= p : tp >= p)) { flash(`${long ? '롱' : '숏'} 익절가는 지금 가격(${fmtP(p)})보다 ${long ? '높게' : '낮게'} 적어 주세요.`, 4000); return; }
-  if (sl != null && (long ? sl >= p : sl <= p)) { flash(`${long ? '롱' : '숏'} 손절가는 지금 가격(${fmtP(p)})보다 ${long ? '낮게' : '높게'} 적어 주세요.`, 4000); return; }
-  open.tp = tp; open.sl = sl;
-  const lp = liqPrice(open);
+  // 포지션이 있으면 지금 가격, 진입 대기 중이면 그 지정가를 기준으로 방향을 확인한다
+  const p = open ? curPrice() : o.entry, long = o.side === 'long', base = open ? '지금 가격' : '지정가';
+  if (tp != null && (long ? tp <= p : tp >= p)) { flash(`${long ? '롱' : '숏'} 익절가는 ${base}(${fmtP(p)})보다 ${long ? '높게' : '낮게'} 적어 주세요.`, 4000); return; }
+  if (sl != null && (long ? sl >= p : sl <= p)) { flash(`${long ? '롱' : '숏'} 손절가는 ${base}(${fmtP(p)})보다 ${long ? '낮게' : '높게'} 적어 주세요.`, 4000); return; }
+  o.tp = tp; o.sl = sl;
+  const lp = liqPrice(o);
   if (sl != null && (long ? sl <= lp : sl >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
   renderPos();
 }
 function cancelOrders() {
-  if (!open || (open.tp == null && open.sl == null)) { flash('걸린 지정가가 없어요.'); return; }
-  open.tp = null; open.sl = null; renderPos();
+  const o = target();
+  if (!o || (o.tp == null && o.sl == null)) { flash('걸린 손익절이 없어요.'); return; }
+  o.tp = null; o.sl = null; renderPos();
 }
 let flashUntil = 0;
 function flash(msg, ms = 2500) {          // 잠깐 보여 줄 안내. 그동안은 포지션 칸을 덮어쓰지 않는다
@@ -832,21 +968,42 @@ $('btnStep').onclick = () => step(1);
 $('btnStep10').onclick = () => step(10);
 $('btnBack').onclick = stepBack;
 $('btnPlay').onclick = togglePlay;
-$('btnLong').onclick = () => enter('long');
-$('btnShort').onclick = () => enter('short');
+$('btnLong').onclick = () => submit('long');
+$('btnShort').onclick = () => submit('short');
+$('btnLimCancel').onclick = cancelLimit;
+document.querySelectorAll('.tabs .tab').forEach((b) => b.onclick = () => {
+  orderType = b.dataset.t;
+  document.querySelectorAll('.tabs .tab').forEach((x) => x.classList.toggle('on', x === b));
+  $('pxBox').style.display = orderType === 'limit' ? '' : 'none';
+  $('mktBox').style.display = orderType === 'market' ? '' : 'none';
+  renderAcct();
+});
+$('btnLast').onclick = () => { if (cursor >= 0) { $('entryPx').value = +curPrice().toFixed(precision); renderAcct(); } };
+$('entryPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >= 0) e.target.value = +curPrice().toFixed(precision); });
+$('entryPx').addEventListener('input', renderAcct);
+$('tpslChk').onchange = (e) => { $('tpslBox').style.display = e.target.checked ? '' : 'none'; renderOrdHint(); e.target.blur(); };
+const setMarginPct = (pct) => {      // 사용 가능 금액의 pct% 를 증거금으로 (100% 는 진입 수수료 낼 만큼 남김)
+  const lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
+  const m = availBal() / (1 + lev * fee) * pct / 100;
+  $('margin').value = Math.floor(m * 100) / 100; renderAcct();
+};
+$('mSlider').addEventListener('input', (e) => setMarginPct(+e.target.value));
+$('mSlider').addEventListener('change', (e) => e.target.blur());
+document.querySelectorAll('.ticks button').forEach((b) => b.onclick = () => { $('mSlider').value = b.dataset.p; setMarginPct(+b.dataset.p); });
 $('btnClose').onclick = () => closePos();
 $('btnSetOrd').onclick = setOrders;
 $('btnCancelOrd').onclick = cancelOrders;
 ['tp', 'sl'].forEach((id) => {
-  $(id).addEventListener('input', renderOrdHint);
-  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { setOrders(); e.target.blur(); } });
+  $(id).addEventListener('input', () => { pctPlan = null; renderOrdHint(); });
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter' && target()) { setOrders(); e.target.blur(); } });
 });
 document.querySelectorAll('button.ordPct').forEach((b) => b.onclick = () => {   // 평단에서 ±% 로 익절가·손절가 칸 채우기(걸기는 따로)
-  if (!open) { flash('포지션을 먼저 잡아 주세요.'); return; }
-  const k = +b.dataset.p / 100, long = open.side === 'long';
+  const o = target(), k = +b.dataset.p / 100;
+  if (!o) { pctPlan = k; $('tp').value = ''; $('sl').value = ''; renderOrdHint(); return; }   // 방향은 주문할 때 정해짐
+  const long = o.side === 'long';
   const r = (x) => +x.toFixed(precision);
-  $('tp').value = r(open.entry * (long ? 1 + k : 1 - k));
-  $('sl').value = r(open.entry * (long ? 1 - k : 1 + k));
+  $('tp').value = r(o.entry * (long ? 1 + k : 1 - k));
+  $('sl').value = r(o.entry * (long ? 1 - k : 1 + k));
   renderOrdHint();
 });
 $('btnResetBal').onclick = () => {
@@ -855,18 +1012,11 @@ $('btnResetBal').onclick = () => {
   if (!confirm(`잔고를 ${usd(st)} 로 다시 시작할까요? (매매 기록은 그대로 남아요)`)) return;
   acct = { start: st, balance: st }; saveAcct(); renderPos();
 };
-document.querySelectorAll('button.pct:not(.ordPct)').forEach((b) => b.onclick = () => {
-  const avail = acct.balance - (open ? open.margin : 0);
-  const lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
-  // '전부'는 진입 수수료까지 낼 수 있게 조금 남긴다
-  const m = +b.dataset.p === 100 ? avail / (1 + lev * fee) : avail * b.dataset.p / 100;
-  $('margin').value = Math.floor(m * 100) / 100; renderAcct(); b.blur();
-});
 ['margin', 'lev', 'fee'].forEach((id) => $(id).addEventListener('input', renderAcct));
 $('btnCsv').onclick = downloadCsv;
 $('btnClear').onclick = () => {
   if (!confirm('이 데이터의 연습 기록을 모두 지울까요?')) return;
-  trades = []; open = null; localStorage.removeItem('replay-trades:' + meta.symbol);
+  trades = []; open = null; pendEntry = null; localStorage.removeItem('replay-trades:' + meta.symbol);
   renderTrades(); renderMarkers(); renderPos();
 };
 document.addEventListener('keydown', (e) => {
@@ -875,8 +1025,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); step(e.shiftKey ? 10 : 1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBack(); }
   else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-  else if (e.key === 'b' || e.key === 'B') enter('long');
-  else if (e.key === 's' || e.key === 'S') enter('short');
+  else if (e.key === 'b' || e.key === 'B') submit('long');
+  else if (e.key === 's' || e.key === 'S') submit('short');
   else if (e.key === 'x' || e.key === 'X') closePos();
 });
 [...document.querySelectorAll('button')].forEach((b) => b.addEventListener('click', () => b.blur()));
