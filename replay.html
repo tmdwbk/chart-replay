@@ -50,6 +50,14 @@
   button.big { flex:1; border:none; border-radius:20px; height:40px; font-size:15px; font-weight:600; color:#fff; }
   button.big.buy { background:#2ebd85; } button.big.sell { background:#e5546a; }
   button.big:hover { filter:brightness(1.08); }
+  #ordLayer { position:absolute; inset:0; pointer-events:none; z-index:4; }
+  .ochip { position:absolute; left:64px; display:flex; height:20px; font-size:12px; border-radius:3px; overflow:hidden; pointer-events:auto;
+           cursor:ns-resize; user-select:none; transform:translateY(-50%); color:#fff; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .ochip span { padding:0 6px; display:flex; align-items:center; }
+  .ochip .x { cursor:pointer; background:rgba(0,0,0,.28); }
+  .ochip .x:hover { background:rgba(0,0,0,.5); }
+  .ochip.add { cursor:pointer; background:#1e222d; color:#d1d4dc; border:1px solid #434651; }
+  #chart.nsr, #chart.nsr * { cursor:ns-resize !important; }
   #pos { padding:8px; border:1px solid var(--line); border-radius:4px; font-variant-numeric: tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric: tabular-nums; }
   th, td { padding:3px 4px; border-bottom:1px solid var(--line); text-align:right; }
@@ -111,7 +119,7 @@
 <div id="info"><span class="dim">데이터를 고르고 시작 시각을 정한 뒤 [여기서 시작]을 누르세요.</span></div>
 
 <div id="main">
-  <div id="chart"><div id="legend"></div></div>
+  <div id="chart"><div id="legend"></div><div id="ordLayer"></div></div>
   <div id="side">
     <div class="otop">
       <span class="chip" title="손실이 증거금까지만 나는 격리 마진으로 계산해요">격리</span>
@@ -665,21 +673,21 @@ function renderAcct() {
 
 // 차트 가로선: 평단(롱 초록·숏 빨강 실선), 익절(파랑 점선)·손절(보라 점선) 지정가. 바뀔 때만 다시 그린다.
 // 진입 지정가가 대기 중이면 같은 색 점선. 평단선 이름 옆에는 지금 ROE%(수수료 포함)를 붙인다.
-let lines = [], linesKey = '', entryLine = null;
+let lines = [], linesKey = '', entryLine = null, linesBy = {};
 const target = () => open || pendEntry;     // 손익절을 걸 대상(열린 포지션 또는 대기 중인 진입 지정가)
 function syncLines() {
   const o = target();
   const key = o ? [!!open, o.side, o.entry, o.tp, o.sl].join('|') : '';
   if (key !== linesKey) {
     linesKey = key;
-    lines.forEach((l) => candle.removePriceLine(l)); lines = []; entryLine = null;
+    lines.forEach((l) => candle.removePriceLine(l)); lines = []; entryLine = null; linesBy = {};
     if (o) {
       const long = o.side === 'long';
       const add = (price, color, style, title) => { const l = candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }); lines.push(l); return l; };
-      entryLine = add(o.entry, long ? '#26a69a' : '#ef5350', open ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+      entryLine = linesBy.entry = add(o.entry, long ? '#26a69a' : '#ef5350', open ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
         (long ? '롱' : '숏') + (open ? ' 평단' : ' 지정가 대기'));
-      if (o.tp != null) add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
-      if (o.sl != null) add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
+      if (o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
+      if (o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
     }
   }
   if (open && entryLine && cursor >= 0) {
@@ -706,8 +714,145 @@ function renderOrdHint() {
   }
   el.innerHTML = parts.length ? '적은 값 기준: ' + parts.join('<br>') : '익절가·손절가를 적으면 예상 손익이 여기 나와요(수수료 포함).';
 }
+// ---- 차트에서 끌어서 옮기는 주문선: 진입 대기 지정가, 익절, 손절 (선이나 왼쪽 표를 위아래로 끌기)
+let drag = null;                            // { kind: 'entry'|'tp'|'sl', price, y0, moved }
+function dragItems() {
+  const o = target();
+  if (!o || cursor < 0) return [];
+  const long = o.side === 'long', items = [];
+  const noTpSl = o.tp == null && o.sl == null;
+  items.push({ kind: open ? 'anchor' : 'entry', price: o.entry, color: long ? '#26a69a' : '#ef5350',
+    label: open ? '' : `${long ? '롱' : '숏'} 지정가 ${fmtP(o.entry)}`, x: !open, add: noTpSl });
+  if (o.tp != null) items.push({ kind: 'tp', price: o.tp, color: '#42a5f5', label: `익절 ${fmtP(o.tp)}`, x: true });
+  if (o.sl != null) items.push({ kind: 'sl', price: o.sl, color: '#ba68c8', label: `손절 ${fmtP(o.sl)}`, x: true });
+  return items;
+}
+function renderChips() {
+  const layer = $('ordLayer');
+  layer.innerHTML = '';
+  for (const it of dragItems()) {
+    const el = document.createElement('div');
+    el.className = 'ochip'; el.dataset.kind = it.kind; el.dataset.price = it.price;
+    let html = '';
+    if (it.label) html += `<span class="lab" style="background:${it.color}">${it.label}</span>`;
+    if (it.x) html += `<span class="x" style="background-color:${it.color}cc" title="취소">✕</span>`;
+    el.innerHTML = html;
+    if (!it.label) el.style.display = 'none';
+    layer.appendChild(el);
+    if (it.add) {                          // TP/SL 이 없으면 옆에 [TP/SL] 버튼
+      const b = document.createElement('div');
+      b.className = 'ochip add'; b.dataset.kind = 'add'; b.dataset.price = it.price;
+      b.innerHTML = '<span>TP/SL</span>'; b.title = '익절·손절선을 만들어 끌어서 옮기기';
+      b.style.left = it.label ? (64 + el.offsetWidth + 6) + 'px' : '64px';
+      layer.appendChild(b);
+    }
+  }
+  positionChips();
+}
+function positionChips() {                  // 차트를 옮기거나 확대해도 표가 선을 따라가게 매 프레임 위치를 맞춘다
+  for (const el of $('ordLayer').children) {
+    const pr = drag && el.dataset.kind === drag.kind ? drag.price : +el.dataset.price;
+    const y = candle.priceToCoordinate(pr);
+    if (y == null || y < 0 || y > $('chart').clientHeight - 30) { el.style.visibility = 'hidden'; continue; }
+    el.style.visibility = ''; el.style.top = y + 'px';
+  }
+}
+(function follow() { if ($('ordLayer').children.length) positionChips(); requestAnimationFrame(follow); })();
+function lineNear(y) {                       // 마우스 y 근처(6px)에 있는 끌 수 있는 선
+  let best = null, bd = 7;
+  for (const it of dragItems()) {
+    if (it.kind === 'anchor') continue;
+    const ly = candle.priceToCoordinate(it.price);
+    if (ly != null && Math.abs(ly - y) < bd) { bd = Math.abs(ly - y); best = it; }
+  }
+  return best;
+}
+function startDrag(kind, price, e) {
+  drag = { kind, price, y0: e.clientY, moved: false };
+  chart.applyOptions({ handleScroll: false, handleScale: false });
+  $('chart').classList.add('nsr');
+  e.preventDefault(); e.stopPropagation();
+}
+function chartY(e) { return e.clientY - $('chart').getBoundingClientRect().top; }
+$('chart').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || cursor < 0) return;
+  const chip = e.target.closest('.ochip');
+  if (chip) {
+    const kind = chip.dataset.kind;
+    if (e.target.closest('.x')) { e.preventDefault(); e.stopPropagation(); removeOrderLine(kind); return; }
+    if (kind === 'add') { e.preventDefault(); e.stopPropagation(); addTpSlLines(); return; }
+    return startDrag(kind, +chip.dataset.price, e);
+  }
+  const it = lineNear(chartY(e));
+  if (it) startDrag(it.kind, it.price, e);
+}, true);
+document.addEventListener('pointermove', (e) => {
+  if (!drag) {                               // 끌 수 있는 선 위에 오면 커서 모양만 바꾼다
+    const r = $('chart').getBoundingClientRect();
+    const inside = e.clientX >= r.left && e.clientX <= r.right - 70 && e.clientY >= r.top && e.clientY <= r.bottom;
+    $('chart').classList.toggle('nsr', inside && cursor >= 0 && !!lineNear(e.clientY - r.top));
+    return;
+  }
+  if (Math.abs(e.clientY - drag.y0) < 3 && !drag.moved) return;
+  drag.moved = true;
+  const p = candle.coordinateToPrice(chartY(e));
+  if (p == null || !(p > 0)) return;
+  drag.price = +(+p).toFixed(precision);
+  if (linesBy[drag.kind]) linesBy[drag.kind].applyOptions({ price: drag.price });
+  const chip = $('ordLayer').querySelector(`.ochip[data-kind="${drag.kind}"] .lab`);
+  if (chip) chip.textContent = chip.textContent.replace(/[\d.]+$/, fmtP(drag.price));
+  renderOrdHintFor(drag.kind, drag.price);
+});
+document.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  chart.applyOptions({ handleScroll: true, handleScale: true });
+  $('chart').classList.remove('nsr');
+  if (d.moved) moveOrder(d.kind, d.price);
+  linesKey = ''; renderPos();                // 옮겼든 되돌렸든 선을 다시 그린다
+});
+// 끌어 놓은 가격 확인: 실제 거래소처럼 방향이 맞을 때만 옮기고, 아니면 제자리로
+function moveOrder(kind, p) {
+  const o = target(); if (!o) return;
+  const long = o.side === 'long', cur = curPrice();
+  if (kind === 'entry') {
+    if (long ? p >= cur : p <= cur) { flash(`${long ? '롱' : '숏'} 지정가는 지금 가격(${fmtP(cur)})보다 ${long ? '낮게' : '높게'}만 옮길 수 있어요.`, 4000); return; }
+    if (o.tp != null && (long ? o.tp <= p : o.tp >= p)) { flash('지정가가 익절가를 넘어가요. 익절선을 먼저 옮겨 주세요.', 4000); return; }
+    if (o.sl != null && (long ? o.sl >= p : o.sl <= p)) { flash('지정가가 손절가를 넘어가요. 손절선을 먼저 옮겨 주세요.', 4000); return; }
+    o.entry = p;
+    $('entryPx').value = p;
+    return;
+  }
+  const ref = open ? cur : o.entry, base = open ? '지금 가격' : '지정가';
+  if (kind === 'tp' && (long ? p <= ref : p >= ref)) { flash(`${long ? '롱' : '숏'} 익절선은 ${base}(${fmtP(ref)})보다 ${long ? '위' : '아래'}에 둬야 해요.`, 4000); return; }
+  if (kind === 'sl' && (long ? p >= ref : p <= ref)) { flash(`${long ? '롱' : '숏'} 손절선은 ${base}(${fmtP(ref)})보다 ${long ? '아래' : '위'}에 둬야 해요.`, 4000); return; }
+  o[kind] = p;
+  const lp = liqPrice(o);
+  if (kind === 'sl' && (long ? p <= lp : p >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
+}
+function removeOrderLine(kind) {
+  const o = target(); if (!o) return;
+  if (kind === 'entry') return cancelLimit();
+  o[kind] = null; renderPos();
+}
+function addTpSlLines() {                    // [TP/SL]: 지금(포지션) 또는 지정가(대기) 기준 ±로 선을 만들고, 끌어서 맞춘다
+  const o = target(); if (!o) return;
+  const long = o.side === 'long', base = open ? curPrice() : o.entry;
+  const k = Math.min(0.01, 0.5 / o.lev);     // 1% (레버리지가 높으면 강제 청산가 안쪽으로 줄임)
+  const r = (x) => +x.toFixed(precision);
+  o.tp = r(base * (long ? 1 + k : 1 - k)); o.sl = r(base * (long ? 1 - k : 1 + k));
+  $('tpslChk').checked = true; $('tpslBox').style.display = '';
+  renderPos();
+  flash('익절(파랑)·손절(보라)선을 끌어서 원하는 가격으로 옮기세요.', 3500);
+}
+function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 끝나면 손익이 얼마인지
+  const o = target(); if (!o || kind === 'entry') return;
+  const pnl = pnlAt(o, p);
+  $('ordHint').innerHTML = `${kind === 'tp' ? '익절' : '손절'} ${fmtP(p)} 이면 <span class="${cls(pnl)}">${usdS(pnl)} (ROE ${sgn(pnl / o.margin * 100)}%, 가격 ${sgn(pnlPct(o.side, o.entry, p))}%)</span>`;
+}
+
 function renderPos() {
-  renderAcct(); syncLines(); renderOrdHint();
+  renderAcct(); syncLines(); renderOrdHint(); if (!drag) renderChips();
   if (Date.now() < flashUntil) return;
   const el = $('pos');
   const ordTxt = (o) => `걸린 손익절: 익절 ${o.tp != null ? `<span style="color:#42a5f5">${fmtP(o.tp)}</span>` : '<span class="dim">없음</span>'} · ` +
