@@ -212,7 +212,7 @@
         <span class="dim" id="pcHint" style="font-size:12px"></span>
       </div>
       <div style="display:flex; gap:6px; align-items:center">
-        <input type="number" id="pcPx" step="any" min="0" style="width:96px" placeholder="지정가">
+        <input type="number" id="pcPx" step="any" min="0" style="width:150px" placeholder="지정가">
         <button id="btnPartialLim" title="Reduce-Only 지정가: 가격이 닿으면 이만큼만 청산">지정가로 걸기 (부분 익절)</button>
       </div>
     </div>
@@ -693,7 +693,11 @@ function placeReduce(amt, px) {
   if (!(amt > 0)) { flash('줄일 금액을 적어 주세요.'); return; }
   if (!px) { flash('지정가를 적어 주세요.'); return; }
   const long = open.side === 'long', cur = curPrice();
-  if (long ? px <= cur : px >= cur) { flash(`지정가가 지금 가격(${fmtP(cur)})보다 ${long ? '낮아서' : '높아서'} 바로 시장가로 청산해요.`, 3500); return partialClose(amt); }
+  // 지정가는 절대 시장가로 바꾸지 않는다. 롱은 지금보다 위, 숏은 아래에만 걸 수 있다(바로 팔려면 시장가 버튼)
+  if (long ? px <= cur : px >= cur) {
+    flash(`${long ? '롱' : '숏'} 부분 익절 지정가는 지금 가격(${fmtP(cur)})보다 ${long ? '높게' : '낮게'} 적어 주세요. 지금 가격에 바로 줄이려면 [시장가로 이만큼 청산]을 누르세요.`, 5000);
+    return;
+  }
   reduces.push({ id: ++reduceId, price: px, amt, t: nowT() });
   const x = partialPreview(amt, px);
   renderPos();
@@ -942,6 +946,7 @@ function renderOrdHintFor(kind, p) {         // 끄는 동안 그 가격에서 �
 
 function renderPcHint() {
   if (!open || cursor < 0) return;
+  $('pcPx').placeholder = `${open.side === 'long' ? '이 값보다 위' : '이 값보다 아래'}: ${fmtP(curPrice())}`;
   const amt = m2n(+$('pcAmt').value);
   if (!(amt > 0)) { $('pcHint').textContent = `지금 증거금 ${usd(open.margin)} (크기 ${usd(open.notional)})`; return; }
   if (amt >= open.notional * 0.999) { $('pcHint').textContent = '전부 청산돼요'; return; }
@@ -1341,13 +1346,13 @@ $('btnShort').onclick = () => submit('short');
 $('btnLimCancel').onclick = cancelLimit;
 $('btnPartial').onclick = () => partialClose(m2n(+$('pcAmt').value));
 $('btnPartialLim').onclick = () => { placeReduce(m2n(+$('pcAmt').value), numOrNull($('pcPx').value)); };
-$('pcPx').addEventListener('focus', (e) => { if (!e.target.value && cursor >= 0) e.target.value = +curPrice().toFixed(precision); });
+$('pcPx').addEventListener('keydown', (e) => { if (e.key === 'Enter') { placeReduce(m2n(+$('pcAmt').value), numOrNull($('pcPx').value)); e.target.blur(); } });
 $('roChk').onchange = (e) => {
   if (e.target.checked && open) $('margin').value = Math.floor(open.margin * 100) / 100;   // 기본은 전부
   renderAcct(); e.target.blur();
 };
 $('pcAmt').addEventListener('input', renderPcHint);
-$('pcAmt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { partialClose(m2n(+$('pcAmt').value)); e.target.blur(); } });
+$('pcAmt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('pcPx').focus(); } });   // Enter 로 바로 팔지 않고 지정가 칸으로
 document.querySelectorAll('button.pcPct').forEach((b) => b.onclick = () => {
   if (!open) return;
   $('pcAmt').value = Math.floor(open.margin * b.dataset.p / 100 * 100) / 100; renderPcHint();
