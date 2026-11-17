@@ -29,6 +29,7 @@
   #side h3 { margin:4px 0; font-size:13px; }
   button.pct { padding:2px 6px; font-size:12px; margin-left:2px; }
   #acct { padding:8px; border:1px solid var(--line); border-radius:4px; line-height:1.6; font-variant-numeric: tabular-nums; }
+  #ordBox { padding:6px 8px; border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; gap:5px; }
   #pos { padding:8px; border:1px solid var(--line); border-radius:4px; font-variant-numeric: tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric: tabular-nums; }
   th, td { padding:3px 4px; border-bottom:1px solid var(--line); text-align:right; }
@@ -112,6 +113,22 @@
       <button class="short" id="btnShort">숏 진입 <kbd>S</kbd></button>
       <button id="btnClose">청산 <kbd>X</kbd></button>
     </div>
+    <div id="ordBox">
+      <div><b style="font-size:12px">손익절 지정가</b> <span class="dim" style="font-size:12px">(포지션을 잡은 뒤 걸어 둠)</span></div>
+      <div>
+        <label class="dim">익절가</label> <input type="number" id="tp" step="any" min="0" style="width:92px">
+        <label class="dim">손절가</label> <input type="number" id="sl" step="any" min="0" style="width:92px">
+      </div>
+      <div style="font-size:12px"><span class="dim">평단에서 ±</span>
+        <button class="pct ordPct" data-p="0.5">0.5%</button><button class="pct ordPct" data-p="1">1%</button><button class="pct ordPct" data-p="2">2%</button><button class="pct ordPct" data-p="3">3%</button>
+        <span class="dim">로 채우기</span>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button id="btnSetOrd">지정가 걸기</button>
+        <button id="btnCancelOrd">지정가 취소</button>
+      </div>
+      <div class="dim" id="ordHint" style="font-size:12px"></div>
+    </div>
     <div id="pos" class="dim">포지션 없음</div>
     <div id="summary" class="dim"></div>
     <div style="display:flex; gap:6px;">
@@ -125,6 +142,9 @@
     <div class="help">
       <kbd>→</kbd> 한 봉 · <kbd>Shift</kbd>+<kbd>→</kbd> 10봉 · <kbd>←</kbd> 한 봉 뒤로 · <kbd>스페이스</kbd> 재생/멈춤<br>
       <kbd>B</kbd> 롱 · <kbd>S</kbd> 숏 · <kbd>X</kbd> 청산 (지금 보이는 마지막 1분봉 종가 기준)<br>
+      차트의 가로선: 초록 실선 = 롱 평단, 빨강 실선 = 숏 평단, 파랑 점선 = 익절 지정가, 보라 점선 = 손절 지정가.<br>
+      지정가는 다음에 공개되는 봉의 고가·저가가 닿으면 체결됩니다. 익절은 적은 가격 그대로, 손절은 봉이 그 가격을 이미 넘어서 시작하면 그 봉의 시가로 체결됩니다.
+      한 봉 안에서 익절가와 손절가에 모두 닿으면 어느 쪽이 먼저인지 알 수 없어 <b>손절로</b> 처리합니다(1초씩 넘기면 이런 경우가 줄어듭니다).<br>
       거래량 막대: 초록 = 시장가 매수 체결, 빨강 = 시장가 매도 체결(바이낸스 체결 기록 기준. 업비트 종목은 구분 없이 한 색).<br>
       시각은 모두 KST. 시작 시각 뒤의 봉은 숨겨져 있고, 3분·5분·15분·1시간 봉은 공개된 1분봉까지만 묶어서 그립니다.
       포지션 크기 = 증거금 × 레버리지. 손익 = 포지션 크기 × 가격 변동% − 수수료(진입·청산 각각 포지션 크기 × 편도 수수료).
@@ -420,7 +440,7 @@ function revealSecond() {
     pend = { list, k: 0 };
   }
   const sb = pend.list[pend.k++];
-  addToAgg(sb); checkLiq(sb); pushLast();
+  addToAgg(sb); checkOrders(sb); pushLast();
   if (pend.k >= pend.list.length) { cursor++; pend = null; }   // 이 분 끝
   return true;
 }
@@ -458,14 +478,14 @@ const toBuy = (a) => (a.bv != null ? { time: a.t + KST_OFF, value: a.bv, color: 
 
 function revealOne() {                 // 1분봉 하나 공개
   if (pend) {                           // 1초씩 보던 분이 있으면 그 분의 나머지를 마저 채운다
-    while (pend.k < pend.list.length) { const sb = pend.list[pend.k++]; addToAgg(sb); checkLiq(sb); }
+    while (pend.k < pend.list.length) { const sb = pend.list[pend.k++]; addToAgg(sb); checkOrders(sb); }
     cursor++; pend = null; pushLast();
     return true;
   }
   if (cursor + 1 >= bars.length) return false;
   cursor++;
   addToAgg(bars[cursor]);
-  checkLiq(bars[cursor]);
+  checkOrders(bars[cursor]);
   pushLast();
   return true;
 }
@@ -592,8 +612,36 @@ function renderAcct() {
     (cursor >= 0 && meta && meta.quote === 'USDT' ? ` ≈ ${(m * lev / curPrice()).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${meta.symbol.replace(/USDT$/, '')}` : '');
 }
 
+// 차트 가로선: 평단(롱 초록·숏 빨강 실선), 익절(파랑 점선)·손절(보라 점선) 지정가. 바뀔 때만 다시 그린다.
+let lines = [], linesKey = '';
+function syncLines() {
+  const key = open ? [open.side, open.entry, open.tp, open.sl].join('|') : '';
+  if (key === linesKey) return;
+  linesKey = key;
+  lines.forEach((l) => candle.removePriceLine(l)); lines = [];
+  if (!open) return;
+  const long = open.side === 'long';
+  const add = (price, color, style, title) => lines.push(candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+  add(open.entry, long ? '#26a69a' : '#ef5350', LightweightCharts.LineStyle.Solid, (long ? '롱' : '숏') + ' 평단');
+  if (open.tp != null) add(open.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
+  if (open.sl != null) add(open.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
+}
+// 가격 p 에서 끝냈을 때의 손익(격리 마진: 증거금 + 진입 수수료까지만 잃음)
+function pnlAt(pos, p) { const r = posPnl(pos, p); return Math.max(r.net, -(pos.margin + r.feeIn)); }
+function renderOrdHint() {
+  const el = $('ordHint');
+  if (!open || cursor < 0) { el.textContent = '포지션을 잡으면 익절가·손절가를 적고 [지정가 걸기]를 누르세요.'; return; }
+  const parts = [];
+  for (const [id, name] of [['tp', '익절'], ['sl', '손절']]) {
+    const v = numOrNull($(id).value);
+    if (v == null || v === false) continue;
+    const pnl = pnlAt(open, v);
+    parts.push(`${name} ${fmtP(v)} 이면 <span class="${cls(pnl)}">${usdS(pnl)} (ROE ${sgn(pnl / open.margin * 100)}%, 가격 ${sgn(pnlPct(open.side, open.entry, v))}%)</span>`);
+  }
+  el.innerHTML = parts.length ? '적은 값 기준: ' + parts.join('<br>') : '익절가·손절가를 적으면 예상 손익이 여기 나옵니다(수수료 포함).';
+}
 function renderPos() {
-  renderAcct();
+  renderAcct(); syncLines(); renderOrdHint();
   if (Date.now() < flashUntil) return;
   const el = $('pos');
   if (!open || cursor < 0) { el.className = 'dim'; el.textContent = '포지션 없음'; return; }
@@ -604,20 +652,22 @@ function renderPos() {
   el.innerHTML = `<b class="${open.side === 'long' ? 'up' : 'down'}">${open.side === 'long' ? '롱' : '숏'} ${open.lev}배</b> ${fmtP(open.entry)} <span class="dim">(${fmtKst(open.t)})</span><br>` +
     `크기 ${usd(open.notional)} · 증거금 ${usd(open.margin)} · <span class="dim">강제 청산가 ≈ ${fmtP(liqPrice(open))}</span><br>` +
     `지금 ${fmtP(p)} · 가격 <span class="${cls(g)}">${sgn(g)}%</span><br>` +
-    `미실현 손익 <b class="${cls(r.net)}">${usdS(r.net)}</b> <span class="${cls(r.net)}">(ROE ${sgn(r.net / open.margin * 100)}%)</span> <span class="dim">수수료 포함</span>`;
+    `미실현 손익 <b class="${cls(r.net)}">${usdS(r.net)}</b> <span class="${cls(r.net)}">(ROE ${sgn(r.net / open.margin * 100)}%)</span> <span class="dim">수수료 포함</span><br>` +
+    `걸린 지정가: 익절 ${open.tp != null ? `<span style="color:#42a5f5">${fmtP(open.tp)}</span>` : '<span class="dim">없음</span>'} · ` +
+    `손절 ${open.sl != null ? `<span style="color:#ba68c8">${fmtP(open.sl)}</span>` : '<span class="dim">없음</span>'}`;
 }
 
 function renderMarkers() {
   const now = cursor >= 0 ? nowT() : 0;
   const mk = [];
-  const add = (t, side, isEntry, price) => {
+  const add = (t, side, isEntry, price, tr) => {
     if (t > now) return;
     const long = side === 'long';
     mk.push(isEntry
       ? { time: bucket(t) + KST_OFF, position: long ? 'belowBar' : 'aboveBar', color: long ? '#26a69a' : '#ef5350', shape: long ? 'arrowUp' : 'arrowDown', text: (long ? '롱 ' : '숏 ') + fmtP(price) }
-      : { time: bucket(t) + KST_OFF, position: long ? 'aboveBar' : 'belowBar', color: '#f0b90b', shape: 'circle', text: '청산 ' + fmtP(price) });
+      : { time: bucket(t) + KST_OFF, position: long ? 'aboveBar' : 'belowBar', color: '#f0b90b', shape: 'circle', text: (tr && tr.liq ? '강제청산 ' : tr && tr.reason === 'tp' ? '익절 ' : tr && tr.reason === 'sl' ? '손절 ' : '청산 ') + fmtP(price) });
   };
-  for (const tr of trades) { add(tr.t_in, tr.side, true, tr.entry); add(tr.t_out, tr.side, false, tr.exit); }
+  for (const tr of trades) { add(tr.t_in, tr.side, true, tr.entry); add(tr.t_out, tr.side, false, tr.exit, tr); }
   if (open) add(open.t, open.side, true, open.entry);
   mk.sort((a, b) => a.time - b.time);
   candle.setMarkers(mk);
@@ -629,7 +679,7 @@ function renderTrades() {
     const i = trades.length - ri;
     const has = tr.pnl != null;
     const tr_ = document.createElement('tr');
-    tr_.innerHTML = `<td>${i}</td><td class="${tr.side === 'long' ? 'up' : 'down'}">${tr.side === 'long' ? '롱' : '숏'}${tr.liq ? ' <span class="down">강제청산</span>' : ''}</td>` +
+    tr_.innerHTML = `<td>${i}</td><td class="${tr.side === 'long' ? 'up' : 'down'}">${tr.side === 'long' ? '롱' : '숏'}${tr.liq ? ' <span class="down">강제청산</span>' : tr.reason === 'tp' ? ' <span style="color:#42a5f5">익절</span>' : tr.reason === 'sl' ? ' <span style="color:#ba68c8">손절</span>' : ''}</td>` +
       `<td title="${fmtKst(tr.t_in)} · ${tr.entry}">${fmtKst(tr.t_in).slice(5)}</td><td title="${fmtKst(tr.t_out)} · ${tr.exit}">${fmtKst(tr.t_out).slice(11)}</td>` +
       `<td class="${cls(has ? tr.pnl : tr.net)}">${has ? usdS(tr.pnl) : '-'}</td>` +
       `<td class="${cls(has ? tr.pnl : tr.net)}">${has ? sgn(tr.pnl / tr.margin * 100, 1) : sgn(tr.net * tr.lev, 1)}</td>`;
@@ -654,10 +704,11 @@ function enter(side) {
   open = { side, entry: curPrice(), t: nowT(), fee, lev, margin, notional };
   renderMarkers(); renderPos();
 }
-function closePos(forcedPrice) {
+// reason: 없음 = 직접 청산(X), 'tp' = 익절 지정가, 'sl' = 손절 지정가, 'liq' = 강제 청산
+function closePos(forcedPrice, reason) {
   if (!open || cursor < 0) return;
-  const liq = forcedPrice != null;
-  const exit = liq ? forcedPrice : curPrice();
+  const liq = reason === 'liq';
+  const exit = forcedPrice != null ? forcedPrice : curPrice();
   const r = posPnl(open, exit);
   // 격리 마진: 잃을 수 있는 건 증거금 + 진입 수수료까지
   const pnl = Math.max(r.net, -(open.margin + r.feeIn));
@@ -666,16 +717,47 @@ function closePos(forcedPrice) {
   const gross = pnlPct(open.side, open.entry, exit);
   trades.push({ symbol: meta.symbol, side: open.side, t_in: open.t, entry: open.entry, t_out: nowT(), exit,
     gross, fee: open.fee, net: pnl / open.notional * 100, lev: open.lev, margin: open.margin, notional: open.notional,
-    fees: liq ? r.feeIn : r.feeIn + r.feeOut, pnl, balance: acct.balance, liq });
+    fees: liq ? r.feeIn : r.feeIn + r.feeOut, pnl, balance: acct.balance, liq, reason: reason || 'manual' });
   open = null;
   localStorage.setItem('replay-trades:' + meta.symbol, JSON.stringify(trades));
   renderMarkers(); renderPos(); renderTrades();
+  $('tp').value = ''; $('sl').value = '';
   if (liq) { stopPlay(); flash(`강제 청산됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 5000); }
+  else if (reason === 'tp') { stopPlay(); flash(`익절 지정가에 체결됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 4000); }
+  else if (reason === 'sl') { stopPlay(); flash(`손절 지정가에 체결됐어요 (${fmtP(exit)}). 손익 ${usdS(pnl)}`, 4000); }
 }
-function checkLiq(b) {                  // 새로 공개된 1분봉의 고가·저가가 강제 청산가에 닿았는지
+// 새로 공개된 봉(1분봉 또는 1초봉)의 고가·저가가 손절·강제 청산·익절 가격에 닿았는지.
+// 한 봉 안에서 여러 개에 닿으면 순서를 알 수 없으므로 불리한 쪽(손절·강제 청산)을 먼저 본다.
+function checkOrders(b) {
   if (!open) return;
+  const long = open.side === 'long';
   const lp = liqPrice(open);
-  if (open.side === 'long' ? b.l <= lp : b.h >= lp) closePos(lp);
+  const sl = open.sl != null && (long ? open.sl > lp : open.sl < lp) ? open.sl : null;   // 청산가보다 먼 손절은 의미 없음
+  if (sl != null && (long ? b.l <= sl : b.h >= sl)) {
+    // 손절(스탑 시장가): 봉이 이미 손절가를 넘어서 시작했으면 그 봉의 시가로 체결
+    return closePos(long ? Math.min(sl, b.o) : Math.max(sl, b.o), 'sl');
+  }
+  if (long ? b.l <= lp : b.h >= lp) return closePos(lp, 'liq');
+  if (open.tp != null && (long ? b.h >= open.tp : b.l <= open.tp)) return closePos(open.tp, 'tp');   // 익절(지정가): 적은 가격 그대로
+}
+// 입력 칸 값: 비었으면 null, 숫자가 아니거나 0 이하면 false
+function numOrNull(s) { s = String(s).trim(); if (!s) return null; const v = +s; return isFinite(v) && v > 0 ? v : false; }
+function setOrders() {
+  if (!open || cursor < 0) { flash('포지션을 먼저 잡은 뒤 지정가를 걸어 주세요.'); return; }
+  const tp = numOrNull($('tp').value), sl = numOrNull($('sl').value);
+  if (tp === false || sl === false) { flash('가격은 0보다 큰 숫자로 적어 주세요.'); return; }
+  if (tp == null && sl == null) { flash('익절가나 손절가를 적어 주세요.'); return; }
+  const p = curPrice(), long = open.side === 'long';
+  if (tp != null && (long ? tp <= p : tp >= p)) { flash(`${long ? '롱' : '숏'} 익절가는 지금 가격(${fmtP(p)})보다 ${long ? '높게' : '낮게'} 적어 주세요.`, 4000); return; }
+  if (sl != null && (long ? sl >= p : sl <= p)) { flash(`${long ? '롱' : '숏'} 손절가는 지금 가격(${fmtP(p)})보다 ${long ? '낮게' : '높게'} 적어 주세요.`, 4000); return; }
+  open.tp = tp; open.sl = sl;
+  const lp = liqPrice(open);
+  if (sl != null && (long ? sl <= lp : sl >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
+  renderPos();
+}
+function cancelOrders() {
+  if (!open || (open.tp == null && open.sl == null)) { flash('걸린 지정가가 없어요.'); return; }
+  open.tp = null; open.sl = null; renderPos();
 }
 let flashUntil = 0;
 function flash(msg, ms = 2500) {          // 잠깐 보여 줄 안내. 그동안은 포지션 칸을 덮어쓰지 않는다
@@ -688,11 +770,12 @@ function flash(msg, ms = 2500) {          // 잠깐 보여 줄 안내. 그동안
 function downloadCsv() {
   if (!trades.length) { flash('저장할 기록이 없어요.'); return; }
   const head = ['번호', '종목', '시장', '방향', '진입시각(KST)', '진입가', '청산시각(KST)', '청산가', '보유(분)', '레버리지',
-    '증거금(USDT)', '포지션크기(USDT)', '가격변동%', '편도수수료%', '수수료(USDT)', '손익(USDT)', 'ROE%', '청산 후 잔고(USDT)', '강제청산'];
+    '증거금(USDT)', '포지션크기(USDT)', '가격변동%', '편도수수료%', '수수료(USDT)', '손익(USDT)', 'ROE%', '청산 후 잔고(USDT)', '강제청산', '청산 방식'];
   const f2 = (x) => (x == null ? '' : (+x).toFixed(2));
   const rows = trades.map((t, i) => [i + 1, t.symbol, meta.market, t.side === 'long' ? '롱' : '숏', fmtKst(t.t_in), t.entry, fmtKst(t.t_out), t.exit,
     Math.round((t.t_out - t.t_in) / 60), t.lev, f2(t.margin), f2(t.notional), t.gross.toFixed(3), t.fee, f2(t.fees), f2(t.pnl),
-    t.pnl != null ? (t.pnl / t.margin * 100).toFixed(2) : '', f2(t.balance), t.liq ? '예' : '']);
+    t.pnl != null ? (t.pnl / t.margin * 100).toFixed(2) : '', f2(t.balance), t.liq ? '예' : '',
+    t.liq ? '강제청산' : t.reason === 'tp' ? '익절 지정가' : t.reason === 'sl' ? '손절 지정가' : '직접 청산']);
   const csv = '﻿' + [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -752,13 +835,27 @@ $('btnPlay').onclick = togglePlay;
 $('btnLong').onclick = () => enter('long');
 $('btnShort').onclick = () => enter('short');
 $('btnClose').onclick = () => closePos();
+$('btnSetOrd').onclick = setOrders;
+$('btnCancelOrd').onclick = cancelOrders;
+['tp', 'sl'].forEach((id) => {
+  $(id).addEventListener('input', renderOrdHint);
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { setOrders(); e.target.blur(); } });
+});
+document.querySelectorAll('button.ordPct').forEach((b) => b.onclick = () => {   // 평단에서 ±% 로 익절가·손절가 칸 채우기(걸기는 따로)
+  if (!open) { flash('포지션을 먼저 잡아 주세요.'); return; }
+  const k = +b.dataset.p / 100, long = open.side === 'long';
+  const r = (x) => +x.toFixed(precision);
+  $('tp').value = r(open.entry * (long ? 1 + k : 1 - k));
+  $('sl').value = r(open.entry * (long ? 1 - k : 1 + k));
+  renderOrdHint();
+});
 $('btnResetBal').onclick = () => {
   const st = +$('startBal').value || 1000;
   if (open) { flash('포지션을 먼저 청산하세요.'); return; }
   if (!confirm(`잔고를 ${usd(st)} 로 다시 시작할까요? (매매 기록은 그대로 남아요)`)) return;
   acct = { start: st, balance: st }; saveAcct(); renderPos();
 };
-document.querySelectorAll('button.pct').forEach((b) => b.onclick = () => {
+document.querySelectorAll('button.pct:not(.ordPct)').forEach((b) => b.onclick = () => {
   const avail = acct.balance - (open ? open.margin : 0);
   const lev = Math.max(1, +$('lev').value || 1), fee = (+$('fee').value || 0) / 100;
   // '전부'는 진입 수수료까지 낼 수 있게 조금 남긴다
