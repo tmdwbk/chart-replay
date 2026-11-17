@@ -743,6 +743,14 @@ function renderAcct() {
       if (document.activeElement !== $('mSlider')) $('mSlider').value = Math.min(100, Math.round(m / open.margin * 100));
     } else $('orderHint').innerHTML = '<span class="dim">포지션이 있을 때만 낼 수 있어요</span>';
   } else $('mLabel').textContent = '증거금';
+  const ro = $('roChk').checked;
+  const lbl = (side) => {
+    const base = side === 'long' ? '매수 (롱)' : '매도 (숏)';
+    if (!open) return ro ? base + ' · 포지션 없음' : base;
+    if (open.side === side) return ro ? base + ' · 막힘' : (side === 'long' ? '추가 매수 (롱)' : '추가 매도 (숏)');
+    return ro ? (side === 'long' ? '매수로 숏 줄이기' : '매도로 롱 줄이기') : base + ' · 청산 먼저';
+  };
+  $('btnLong').textContent = lbl('long'); $('btnShort').textContent = lbl('short');
 }
 
 // 차트 가로선: 평단(롱 초록·숏 빨강 실선), 익절(파랑 점선)·손절(보라 점선) 지정가. 바뀔 때만 다시 그린다.
@@ -1005,7 +1013,15 @@ function renderMarkers() {
   if (open) addFills(open, open.t, open.side, open.entry);
   for (const o of [...trades, ...(open ? [open] : [])]) for (const pc of o.partials || []) add(pc.t, o.side, false, pc.price, { reason: 'partial' });
   mk.sort((a, b) => a.time - b.time);
-  candle.setMarkers(mk);
+  // 한 봉에 같은 종류 표시가 여러 개면 하나로 묶는다(예: '부분 ×3'). 글자가 겹쳐 읽을 수 없게 되는 것을 막음
+  const grouped = [];
+  for (const m of mk) {
+    const kind = m.text.split(' ')[0];
+    const g = grouped.find((x) => x.time === m.time && x.kind === kind && x.position === m.position);
+    if (g) { g.n++; g.text = `${kind} ×${g.n}`; }
+    else grouped.push({ ...m, kind, n: 1 });
+  }
+  candle.setMarkers(grouped.map(({ kind, n, ...m }) => m));
 }
 
 // ---- 아래 칸: 포지션 / 포지션 기록 / 대기 주문 (거래소의 Positions · Position History · Open Orders 처럼)
@@ -1168,7 +1184,7 @@ function submit(side) {
     if (rest) { pendEntry = ord; flash(`${long ? '롱' : '숏'} 지정가 주문을 걸었어요 (${fmtP(px)}). 가격이 닿으면 진입해요.`, 3000); }
     else {
       open = newPos(ord, nowT());
-      if (orderType === 'limit') flash(`지정가가 지금 가격보다 유리해서 바로 체결됐어요 (${fmtP(cur)}).`, 3000);
+      if (orderType === 'limit') flash(`지정가가 지금 가격${(+$('entryPx').value) === cur ? '과 같아서' : '보다 유리해서'} 바로 체결됐어요 (${fmtP(cur)}).`, 3000);
     }
   }
   const tgt = open || pendEntry, lp = liqPrice(tgt);
@@ -1203,6 +1219,8 @@ function closePos(forcedPrice, reason) {
     fees: (liq ? r.feeIn : r.feeIn + r.feeOut) + (open.feesPaid || 0), pnl, balance: acct.balance, liq, reason: reason || 'manual',
     qty: qAll, fills: open.fills || null, partials: parts.length ? parts : null });
   open = null; reduces = [];
+  const droppedAdd = pendEntry && pendEntry.add;
+  if (droppedAdd) pendEntry = null;           // 추가매수 대기는 포지션이 없으면 의미가 없으니 같이 취소
   localStorage.setItem('replay-trades:' + meta.symbol, JSON.stringify(trades));
   renderMarkers(); renderPos(); renderTrades();
   $('tp').value = ''; $('sl').value = '';
