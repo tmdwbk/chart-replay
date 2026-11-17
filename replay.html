@@ -1779,7 +1779,17 @@ function measureSvg() {                       // 측정: 가격 차이(%), 봉 �
   if (qv > 0) lines.push(`거래대금 ${fmtBig(qv)}${meta.quote ? ' ' + meta.quote : ''}`);
   const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
   let h = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" fill="${col}" fill-opacity=".18"/>`;
-  h += `<line x1="${mx}" y1="${a[1]}" x2="${mx}" y2="${b[1]}" stroke="${col}" stroke-width="1.5"/><line x1="${a[0]}" y1="${my}" x2="${b[0]}" y2="${my}" stroke="${col}" stroke-width="1.5"/>`;
+  // 트레이딩뷰처럼 시작 → 끝 방향 화살표 두 개: 세로(가격이 오른/내린 쪽), 가로(시간이 흐른 쪽)
+  const arrow = (x1, y1, x2, y2) => {
+    let r = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="1.5"/>`;
+    if (Math.hypot(x2 - x1, y2 - y1) >= 12) {
+      const ang = Math.atan2(y2 - y1, x2 - x1), k = 8;
+      const p1 = [x2 - k * Math.cos(ang - 0.5), y2 - k * Math.sin(ang - 0.5)], p2 = [x2 - k * Math.cos(ang + 0.5), y2 - k * Math.sin(ang + 0.5)];
+      r += `<polyline points="${p1} ${x2},${y2} ${p2}" fill="none" stroke="${col}" stroke-width="1.5"/>`;
+    }
+    return r;
+  };
+  h += arrow(mx, a[1], mx, b[1]) + arrow(a[0], my, b[0], my);
   const tw = Math.max(...lines.map((t) => textW(t, 12))) + 16, th = lines.length * 17 + 8;
   const ly = up ? y - th - 6 : y + rh + 6;
   h += `<rect x="${mx - tw / 2}" y="${ly}" width="${tw}" height="${th}" rx="4" fill="${col}"/>`;
