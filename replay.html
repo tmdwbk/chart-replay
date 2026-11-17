@@ -106,7 +106,7 @@
   <div class="sep"></div>
   <label>봉</label>
   <select id="tf">
-    <option value="1">1분</option><option value="3">3분</option><option value="5" selected>5분</option>
+    <option value="1" selected>1분</option><option value="3">3분</option><option value="5">5분</option>
     <option value="15">15분</option><option value="60">1시간</option>
   </select>
   <label>넘기는 단위</label>
@@ -122,7 +122,7 @@
   <button id="btnPlay" title="스페이스">재생</button>
   <label>속도</label>
   <select id="speed">
-    <option value="1">초당 1봉</option><option value="2" selected>초당 2봉</option><option value="4">초당 4봉</option>
+    <option value="1" selected>초당 1봉</option><option value="2">초당 2봉</option><option value="4">초당 4봉</option>
     <option value="8">초당 8봉</option><option value="16">초당 16봉</option><option value="30">초당 30봉</option><option value="60">초당 60봉</option>
   </select>
 </div>
@@ -251,7 +251,7 @@ const $ = (id) => document.getElementById(id);
 let meta = null;      // 지금 데이터 정보
 let bars = [];        // 1분봉 전체 {t,o,h,l,c,v,qv}
 let cursor = -1;      // 공개된 마지막 1분봉 위치
-let tfSec = 300;
+let tfSec = 60;
 let agg = [];         // 공개된 1분봉을 묶은 봉
 let trades = [];      // 끝난 가상 매매
 let open = null;      // 열린 가상 포지션
