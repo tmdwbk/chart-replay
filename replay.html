@@ -625,7 +625,22 @@ function posPnl(pos, p) {
   const feeOut = pos.notional * (p / pos.entry) * pos.fee / 100;
   return { gross, feeIn, feeOut, net: gross - feeIn - feeOut };
 }
-const liqPrice = (pos) => pos.side === 'long' ? pos.entry * (1 - 1 / pos.lev) : pos.entry * (1 + 1 / pos.lev);
+// 격리 마진 강제 청산가: 손실이 증거금에 닿는 가격. 추가매수 뒤에도 맞도록 '증거금 ÷ 포지션 크기'로 계산(유지증거금 제외)
+const liqPrice = (pos) => { const k = pos.margin / pos.notional; return pos.side === 'long' ? pos.entry * (1 - k) : pos.entry * (1 + k); };
+// 포지션 만들기 / 추가매수. 평단 = 진입 금액 합 ÷ 수량 합 (수량 = 금액 ÷ 체결가). 손익 = 수량 × (지금가 − 평단)
+function newPos(ord, t) {
+  return { ...ord, t, qty: ord.notional / ord.entry, fills: [{ t, price: ord.entry, notional: ord.notional }] };
+}
+function addFill(price, o, t) {
+  const q0 = open.qty || open.notional / open.entry, q1 = o.notional / price;
+  if (!open.fills) open.fills = [{ t: open.t, price: open.entry, notional: open.notional }];
+  open.fills.push({ t, price, notional: o.notional });
+  open.qty = q0 + q1;
+  open.notional += o.notional;
+  open.margin += o.margin;
+  open.entry = open.notional / open.qty;
+}
+const addsOf = (o) => Math.max(0, (o.fills || []).length - 1);
 
 function availBal() { return Math.max(0, acct.balance - (open ? open.margin : 0)); }
 function renderAcct() {
@@ -653,19 +668,18 @@ function renderAcct() {
 let lines = [], linesKey = '', entryLine = null, linesBy = {};
 const target = () => open || pendEntry;     // 손익절을 걸 대상(열린 포지션 또는 대기 중인 진입 지정가)
 function syncLines() {
-  const o = target();
-  const key = o ? [!!open, o.side, o.entry, o.tp, o.sl].join('|') : '';
+  const pe = pendEntry;
+  const key = JSON.stringify([open && [open.side, open.entry, open.tp, open.sl], pe && [pe.side, pe.entry, pe.tp, pe.sl]]);
   if (key !== linesKey) {
     linesKey = key;
     lines.forEach((l) => candle.removePriceLine(l)); lines = []; entryLine = null; linesBy = {};
-    if (o) {
-      const long = o.side === 'long';
-      const add = (price, color, style, title) => { const l = candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }); lines.push(l); return l; };
-      entryLine = linesBy.entry = add(o.entry, long ? '#26a69a' : '#ef5350', open ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-        (long ? '롱' : '숏') + (open ? ' 평단' : ' 지정가 대기'));
-      if (o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
-      if (o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
-    }
+    const add = (price, color, style, title) => { const l = candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }); lines.push(l); return l; };
+    const col = (side) => (side === 'long' ? '#26a69a' : '#ef5350'), nm = (side) => (side === 'long' ? '롱' : '숏');
+    if (open) entryLine = add(open.entry, col(open.side), LightweightCharts.LineStyle.Solid, nm(open.side) + ' 평단');
+    if (pe) linesBy.entry = add(pe.entry, col(pe.side), LightweightCharts.LineStyle.Dashed, nm(pe.side) + (open ? ' 추가 대기' : ' 지정가 대기'));
+    const o = target();
+    if (o && o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
+    if (o && o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
   }
   if (open && entryLine && cursor >= 0) {
     const roe = posPnl(open, curPrice()).net / open.margin * 100;
@@ -696,10 +710,13 @@ let drag = null;                            // { kind: 'entry'|'tp'|'sl', price,
 function dragItems() {
   const o = target();
   if (!o || cursor < 0) return [];
-  const long = o.side === 'long', items = [];
-  const noTpSl = o.tp == null && o.sl == null;
-  items.push({ kind: open ? 'anchor' : 'entry', price: o.entry, color: long ? '#26a69a' : '#ef5350',
-    label: open ? '' : `${long ? '롱' : '숏'} 지정가 ${fmtP(o.entry)}`, x: !open, add: noTpSl });
+  const items = [], noTpSl = o.tp == null && o.sl == null;
+  if (open) items.push({ kind: 'anchor', price: open.entry, color: '', label: '', x: false, add: noTpSl });
+  if (pendEntry) {
+    const pe = pendEntry, long = pe.side === 'long';
+    items.push({ kind: 'entry', price: pe.entry, color: long ? '#26a69a' : '#ef5350',
+      label: `${long ? '롱' : '숏'} ${open ? '추가 지정가' : '지정가'} ${fmtP(pe.entry)}`, x: true, add: !open && noTpSl });
+  }
   if (o.tp != null) items.push({ kind: 'tp', price: o.tp, color: '#42a5f5', label: `익절 ${fmtP(o.tp)}`, x: true });
   if (o.sl != null) items.push({ kind: 'sl', price: o.sl, color: '#ba68c8', label: `손절 ${fmtP(o.sl)}`, x: true });
   return items;
@@ -793,10 +810,12 @@ function moveOrder(kind, p) {
   const o = target(); if (!o) return;
   const long = o.side === 'long', cur = curPrice();
   if (kind === 'entry') {
+    const pe = pendEntry; if (!pe) return;
+    const long = pe.side === 'long';
     if (long ? p >= cur : p <= cur) { flash(`${long ? '롱' : '숏'} 지정가는 지금 가격(${fmtP(cur)})보다 ${long ? '낮게' : '높게'}만 옮길 수 있어요.`, 4000); return; }
-    if (o.tp != null && (long ? o.tp <= p : o.tp >= p)) { flash('지정가가 익절가를 넘어가요. 익절선을 먼저 옮겨 주세요.', 4000); return; }
-    if (o.sl != null && (long ? o.sl >= p : o.sl <= p)) { flash('지정가가 손절가를 넘어가요. 손절선을 먼저 옮겨 주세요.', 4000); return; }
-    o.entry = p;
+    if (!open && pe.tp != null && (long ? pe.tp <= p : pe.tp >= p)) { flash('지정가가 익절가를 넘어가요. 익절선을 먼저 옮겨 주세요.', 4000); return; }
+    if (!open && pe.sl != null && (long ? pe.sl >= p : pe.sl <= p)) { flash('지정가가 손절가를 넘어가요. 손절선을 먼저 옮겨 주세요.', 4000); return; }
+    pe.entry = p;
     $('entryPx').value = p;
     return;
   }
@@ -849,25 +868,31 @@ function renderPos() {
   const g = pnlPct(open.side, open.entry, p);
   const r = posPnl(open, p);
   el.className = '';
-  el.innerHTML = `<b class="${open.side === 'long' ? 'up' : 'down'}">${open.side === 'long' ? '롱' : '숏'} ${open.lev}배</b> ${fmtP(open.entry)} <span class="dim">(${fmtKst(open.t)})</span><br>` +
+  const nAdd = addsOf(open);
+  el.innerHTML = `<b class="${open.side === 'long' ? 'up' : 'down'}">${open.side === 'long' ? '롱' : '숏'} ${open.lev}배</b> 평단 ${fmtP(open.entry)} <span class="dim">(${fmtKst(open.t)}${nAdd ? ` · 추가매수 ${nAdd}회` : ''})</span><br>` +
     `크기 ${usd(open.notional)} · 증거금 ${usd(open.margin)} · <span class="dim">강제 청산가 ≈ ${fmtP(liqPrice(open))}</span><br>` +
     `지금 ${fmtP(p)} · 가격 <span class="${cls(g)}">${sgn(g)}%</span><br>` +
     `미실현 손익 <b class="${cls(r.net)}">${usdS(r.net)}</b> <span class="${cls(r.net)}">(ROE ${sgn(r.net / open.margin * 100)}%)</span> <span class="dim">수수료 포함</span><br>` +
-    ordTxt(open);
+    ordTxt(open) +
+    (pendEntry ? `<br><span class="dim">추가 지정가 대기 ${fmtP(pendEntry.entry)} · 증거금 ${usd(pendEntry.margin)}</span>` : '');
 }
 
 function renderMarkers() {
   const now = cursor >= 0 ? nowT() : 0;
   const mk = [];
-  const add = (t, side, isEntry, price, tr) => {
+  const add = (t, side, isEntry, price, tr, isAdd) => {
     if (t > now) return;
     const long = side === 'long';
     mk.push(isEntry
-      ? { time: bucket(t) + KST_OFF, position: long ? 'belowBar' : 'aboveBar', color: long ? '#26a69a' : '#ef5350', shape: long ? 'arrowUp' : 'arrowDown', text: (long ? '롱 ' : '숏 ') + fmtP(price) }
+      ? { time: bucket(t) + KST_OFF, position: long ? 'belowBar' : 'aboveBar', color: long ? '#26a69a' : '#ef5350', shape: long ? 'arrowUp' : 'arrowDown', text: (isAdd ? '추가 ' : long ? '롱 ' : '숏 ') + fmtP(price) }
       : { time: bucket(t) + KST_OFF, position: long ? 'aboveBar' : 'belowBar', color: '#f0b90b', shape: 'circle', text: (tr && tr.liq ? '강제청산 ' : tr && tr.reason === 'tp' ? '익절 ' : tr && tr.reason === 'sl' ? '손절 ' : '청산 ') + fmtP(price) });
   };
-  for (const tr of trades) { add(tr.t_in, tr.side, true, tr.entry); add(tr.t_out, tr.side, false, tr.exit, tr); }
-  if (open) add(open.t, open.side, true, open.entry);
+  const addFills = (o, t0, side, entry) => {
+    if (!o.fills || o.fills.length < 2) return add(t0, side, true, entry);
+    o.fills.forEach((f, k) => add(f.t, side, true, f.price, null, k > 0));
+  };
+  for (const tr of trades) { addFills(tr, tr.t_in, tr.side, tr.entry); add(tr.t_out, tr.side, false, tr.exit, tr); }
+  if (open) addFills(open, open.t, open.side, open.entry);
   mk.sort((a, b) => a.time - b.time);
   candle.setMarkers(mk);
 }
@@ -902,10 +927,10 @@ function renderBottom() {
   if (btab === 'pos') {
     if (!open || cursor < 0) { el.innerHTML = '<div class="empty">포지션 없음</div>'; return; }
     const o = open, p = curPrice(), r = posPnl(o, p), roe = r.net / o.margin * 100, sym = meta.symbol;
-    el.innerHTML = `<table><thead><tr><th>종목</th><th>방향</th><th>수량</th><th>미실현 손익 (ROE)</th><th>진입가</th><th>예상 청산가</th><th>손익분기 가격</th><th>TP/SL</th><th>현재가</th><th>증거금</th><th>진입 시각</th><th>청산</th></tr></thead><tbody><tr>` +
+    el.innerHTML = `<table><thead><tr><th>종목</th><th>방향</th><th>수량</th><th>미실현 손익 (ROE)</th><th>평단가</th><th>예상 청산가</th><th>손익분기 가격</th><th>TP/SL</th><th>현재가</th><th>증거금</th><th>진입 시각</th><th>청산</th></tr></thead><tbody><tr>` +
       `<td>${symTag(sym, o.lev)}</td><td>${sideTxt(o.side)}</td><td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td>` +
       `<td><b class="${cls(r.net)}">${usdS(r.net)}</b><br><span class="${cls(r.net)}">${sgn(roe)}%</span></td>` +
-      `<td>${fmtP(o.entry)}</td><td class="dim">${fmtP(liqPrice(o))}</td><td>${fmtP(beP(o))}</td>` +
+      `<td>${fmtP(o.entry)}${addsOf(o) ? `<br><span class="dim">추가매수 ${addsOf(o)}회</span>` : ''}</td><td class="dim">${fmtP(liqPrice(o))}</td><td>${fmtP(beP(o))}</td>` +
       `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
       `<td>${fmtP(p)}</td><td>${usd(o.margin)}</td><td class="dim">${fmtKst(o.t)}</td>` +
       `<td><button id="bClose">시장가 청산</button></td></tr></tbody></table>`;
@@ -916,7 +941,7 @@ function renderBottom() {
     if (!pendEntry || cursor < 0) { el.innerHTML = '<div class="empty">대기 주문 없음</div>'; return; }
     const o = pendEntry, sym = meta.symbol;
     el.innerHTML = `<table><thead><tr><th>종목</th><th>주문 시각</th><th>방향</th><th>종류</th><th>가격</th><th>수량</th><th>증거금</th><th>TP/SL</th><th>지금 가격까지</th><th>취소</th></tr></thead><tbody><tr>` +
-      `<td>${symTag(sym, o.lev)}</td><td class="dim">${fmtKst(o.t)}</td><td>${sideTxt(o.side)}</td><td>지정가</td><td>${fmtP(o.entry)}</td>` +
+      `<td>${symTag(sym, o.lev)}</td><td class="dim">${fmtKst(o.t)}</td><td>${sideTxt(o.side)}</td><td>${o.add ? '지정가 (추가매수)' : '지정가'}</td><td>${fmtP(o.entry)}</td>` +
       `<td>${sizeTxt(o, sym)}<br><span class="dim">${usd(o.notional)}</span></td><td>${usd(o.margin)}</td>` +
       `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
       `<td class="dim">${sgn((o.entry / curPrice() - 1) * 100)}%</td><td><button id="bCancel">취소</button></td></tr></tbody></table>`;
@@ -933,13 +958,13 @@ function renderBottom() {
     $('histSum').innerHTML = `${list.length}회 · 수익 ${wins} / 손실 ${list.length - wins} (승률 ${(wins / list.length * 100).toFixed(0)}%) · 실현 손익 <b class="${cls(sum)}">${usdS(sum)}</b> · 낸 수수료 ${usd(fees)}`;
   } else $('histSum').textContent = '';
   if (!list.length) { el.innerHTML = '<div class="empty">기록 없음</div>'; return; }
-  el.innerHTML = `<table><thead><tr><th>#</th><th>종목</th><th>방향</th><th>청산 방식</th><th>진입 시각</th><th>진입가</th><th>청산가</th><th>수량</th><th>보유</th><th>실현 손익 / ROE</th><th>수수료</th><th>청산 시각</th></tr></thead><tbody>` +
+  el.innerHTML = `<table><thead><tr><th>#</th><th>종목</th><th>방향</th><th>청산 방식</th><th>진입 시각</th><th>평단가</th><th>청산가</th><th>수량</th><th>보유</th><th>실현 손익 / ROE</th><th>수수료</th><th>청산 시각</th></tr></thead><tbody>` +
     [...list].reverse().map((t, ri) => {
       const pn = t.pnl, roe = pn != null ? pn / t.margin * 100 : t.net * t.lev;
       const qty = t.notional && t.entry ? (t.notional / t.entry).toLocaleString('en-US', { maximumFractionDigits: t.notional / t.entry < 10 ? 4 : 0 }) + ' ' + (t.symbol || '').replace(/USDT$/, '').replace(/^KRW-/, '') : '-';
       const mins = Math.round(((t.t_out || 0) - (t.t_in || 0)) / 60);
       return `<tr><td class="dim">${list.length - ri}</td><td>${symTag(t.symbol, t.lev)}</td><td>${sideTxt(t.side)}</td><td>${reasonTxt(t)}</td>` +
-        `<td class="dim">${fmtKst(t.t_in)}</td><td>${fmtN(t.entry)}</td><td>${fmtN(t.exit)}</td><td>${qty}</td><td class="dim">${mins < 60 ? mins + '분' : (mins / 60).toFixed(1) + '시간'}</td>` +
+        `<td class="dim">${fmtKst(t.t_in)}</td><td>${fmtN(t.entry)}${addsOf(t) ? `<br><span class="dim">추가매수 ${addsOf(t)}회</span>` : ''}</td><td>${fmtN(t.exit)}</td><td>${qty}</td><td class="dim">${mins < 60 ? mins + '분' : (mins / 60).toFixed(1) + '시간'}</td>` +
         `<td><b class="${cls(pn ?? t.net)}">${pn != null ? usdS(pn) : '-'}</b><br><span class="${cls(pn ?? t.net)}">${sgn(roe)}%</span></td>` +
         `<td class="dim">${t.fees != null ? usd(t.fees) : '-'}</td><td class="dim">${fmtKst(t.t_out)}</td></tr>`;
     }).join('') + '</tbody></table>';
@@ -952,13 +977,15 @@ function renderBottomCounts() {
 
 // ---------------------------------------------------------------- 가상 매매 (화면 표시만, 주문 기능 없음)
 // 진입 공통 확인: 포지션·대기 주문이 없고, 증거금·잔고가 맞으면 {fee, lev, margin, notional}
-function orderBase() {
-  if (open) { flash(`이미 ${open.side === 'long' ? '롱' : '숏'} 포지션이 있어요. 먼저 청산(X)하세요.`); return null; }
+function orderBase(side) {
+  if (open && open.side !== side) { flash(`지금 ${open.side === 'long' ? '롱' : '숏'} 포지션이 있어요. 반대 방향은 먼저 청산(X)하세요.`); return null; }
   if (pendEntry) { flash('대기 중인 지정가 주문이 있어요. 먼저 [대기 주문 취소]를 누르세요.'); return null; }
-  const margin = +$('margin').value || 0, lev = Math.max(1, +$('lev').value || 1), fee = +$('fee').value || 0;
+  const margin = +$('margin').value || 0;
+  // 추가매수는 지금 포지션의 레버리지·수수료로 들어간다(거래소처럼 레버리지는 포지션 하나에 하나)
+  const lev = open ? open.lev : Math.max(1, +$('lev').value || 1), fee = open ? open.fee : +$('fee').value || 0;
   if (margin <= 0) { flash('증거금을 적어 주세요.'); return null; }
   const notional = margin * lev;
-  if (margin + notional * fee / 100 > acct.balance + 1e-9) { flash(`잔고가 모자라요. 잔고 ${usd(acct.balance)} (진입 수수료 포함)`); return null; }
+  if (margin + notional * fee / 100 > availBal() + 1e-9) { flash(`사용 가능 금액이 모자라요. ${usd(availBal())} (진입 수수료 포함)`); return null; }
   return { fee, lev, margin, notional };
 }
 // 손익절 칸 읽기: 진입가 entry 기준으로 방향 확인. 잘못이면 null 을 돌려주고 안내
@@ -989,16 +1016,33 @@ function submit(side) {
     rest = long ? v < cur : v > cur;
     if (rest) px = v;
   }
-  const o = orderBase(); if (!o) return;
-  const ts = readTpSl(side, px, rest ? '지정가' : '진입가'); if (!ts) return;
-  const ord = { side, entry: px, t: nowT(), ...o, ...ts };
-  if (rest) { pendEntry = ord; flash(`${long ? '롱' : '숏'} 지정가 주문을 걸었어요 (${fmtP(px)}). 가격이 닿으면 진입해요.`, 3000); }
-  else {
-    open = ord;
-    if (orderType === 'limit') flash(`지정가가 지금 가격보다 유리해서 바로 체결됐어요 (${fmtP(cur)}).`, 3000);
+  const o = orderBase(side); if (!o) return;
+  const adding = !!open;
+  // 손익절: 새 진입이면 진입가 기준, 추가매수면 포지션에 걸고 지금 가격 기준으로 확인
+  const ts = adding ? readTpSl(side, cur, '지금 가격') : readTpSl(side, px, rest ? '지정가' : '진입가');
+  if (!ts) return;
+  const levNote = adding && +$('lev').value !== open.lev ? ` (레버리지는 지금 포지션의 ${open.lev}배로 들어가요)` : '';
+  if (adding) {
+    if (ts.tp != null) open.tp = ts.tp;
+    if (ts.sl != null) open.sl = ts.sl;
+    if (rest) {
+      pendEntry = { side, entry: px, t: nowT(), ...o, tp: null, sl: null, add: true };
+      flash(`추가매수 지정가를 걸었어요 (${fmtP(px)}). 가격이 닿으면 평단이 다시 계산돼요.${levNote}`, 3500);
+    } else {
+      const before = open.entry;
+      addFill(cur, o, nowT());
+      flash(`추가매수 체결 ${fmtP(cur)} · 평단 ${fmtP(before)} → ${fmtP(open.entry)}${levNote}`, 4000);
+    }
+  } else {
+    const ord = { side, entry: px, t: nowT(), ...o, ...ts };
+    if (rest) { pendEntry = ord; flash(`${long ? '롱' : '숏'} 지정가 주문을 걸었어요 (${fmtP(px)}). 가격이 닿으면 진입해요.`, 3000); }
+    else {
+      open = newPos(ord, nowT());
+      if (orderType === 'limit') flash(`지정가가 지금 가격보다 유리해서 바로 체결됐어요 (${fmtP(cur)}).`, 3000);
+    }
   }
-  const lp = liqPrice(ord);
-  if (ts.sl != null && (long ? ts.sl <= lp : ts.sl >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
+  const tgt = open || pendEntry, lp = liqPrice(tgt);
+  if (tgt.sl != null && (long ? tgt.sl <= lp : tgt.sl >= lp)) flash(`손절가가 강제 청산가(${fmtP(lp)})보다 멀어서, 손절 전에 강제 청산돼요.`, 5000);
   pctPlan = null; $('tp').value = ''; $('sl').value = '';
   renderMarkers(); renderPos();
 }
@@ -1019,7 +1063,8 @@ function closePos(forcedPrice, reason) {
   const gross = pnlPct(open.side, open.entry, exit);
   trades.push({ symbol: meta.symbol, side: open.side, t_in: open.t, entry: open.entry, t_out: nowT(), exit,
     gross, fee: open.fee, net: pnl / open.notional * 100, lev: open.lev, margin: open.margin, notional: open.notional,
-    fees: liq ? r.feeIn : r.feeIn + r.feeOut, pnl, balance: acct.balance, liq, reason: reason || 'manual' });
+    fees: liq ? r.feeIn : r.feeIn + r.feeOut, pnl, balance: acct.balance, liq, reason: reason || 'manual',
+    qty: open.qty || open.notional / open.entry, fills: open.fills || null });
   open = null;
   localStorage.setItem('replay-trades:' + meta.symbol, JSON.stringify(trades));
   renderMarkers(); renderPos(); renderTrades();
@@ -1031,16 +1076,24 @@ function closePos(forcedPrice, reason) {
 // 새로 공개된 봉(1분봉 또는 1초봉)의 고가·저가가 손절·강제 청산·익절 가격에 닿았는지.
 // 한 봉 안에서 여러 개에 닿으면 순서를 알 수 없으므로 불리한 쪽(손절·강제 청산)을 먼저 본다.
 function checkOrders(b) {
-  if (!open && pendEntry) {
+  if (pendEntry) {
     const pe = pendEntry, long = pe.side === 'long';
     if (long ? b.l <= pe.entry : b.h >= pe.entry) {
       pendEntry = null;
-      if (pe.margin + pe.notional * pe.fee / 100 > acct.balance + 1e-9) { stopPlay(); flash('지정가에 닿았지만 잔고가 모자라 주문을 취소했어요.', 4000); return; }
-      open = { ...pe, t: b.t };          // 지정가 그대로 진입. 손익절은 다음 봉부터 본다
-      renderMarkers(); stopPlay();
-      flash(`${long ? '롱' : '숏'} 지정가에 진입했어요 (${fmtP(pe.entry)}).`, 3000);
+      if (open && open.side !== pe.side) return;
+      if (pe.margin + pe.notional * pe.fee / 100 > availBal() + 1e-9) { stopPlay(); flash('지정가에 닿았지만 사용 가능 금액이 모자라 주문을 취소했어요.', 4000); return; }
+      if (open) {                       // 추가매수: 평단 다시 계산. 손익절은 다음 봉부터 본다
+        const before = open.entry;
+        addFill(pe.entry, pe, b.t);
+        renderMarkers(); stopPlay();
+        flash(`추가매수 지정가 체결 ${fmtP(pe.entry)} · 평단 ${fmtP(before)} → ${fmtP(open.entry)}`, 4000);
+      } else {
+        open = newPos(pe, b.t);          // 지정가 그대로 진입. 손익절은 다음 봉부터 본다
+        renderMarkers(); stopPlay();
+        flash(`${long ? '롱' : '숏'} 지정가에 진입했어요 (${fmtP(pe.entry)}).`, 3000);
+      }
+      return;
     }
-    return;
   }
   if (!open) return;
   const long = open.side === 'long';
@@ -1086,12 +1139,13 @@ function flash(msg, ms = 2500) {          // 잠깐 보여 줄 안내. 그동안
 function downloadCsv() {
   if (!trades.length) { flash('저장할 기록이 없어요.'); return; }
   const head = ['번호', '종목', '시장', '방향', '진입시각(KST)', '진입가', '청산시각(KST)', '청산가', '보유(분)', '레버리지',
-    '증거금(USDT)', '포지션크기(USDT)', '가격변동%', '편도수수료%', '수수료(USDT)', '손익(USDT)', 'ROE%', '청산 후 잔고(USDT)', '강제청산', '청산 방식'];
+    '증거금(USDT)', '포지션크기(USDT)', '가격변동%', '편도수수료%', '수수료(USDT)', '손익(USDT)', 'ROE%', '청산 후 잔고(USDT)', '강제청산', '청산 방식', '추가매수 횟수', '체결 내역(시각 가격 금액)'];
   const f2 = (x) => (x == null ? '' : (+x).toFixed(2));
   const rows = trades.map((t, i) => [i + 1, t.symbol, meta.market, t.side === 'long' ? '롱' : '숏', fmtKst(t.t_in), t.entry, fmtKst(t.t_out), t.exit,
     Math.round((t.t_out - t.t_in) / 60), t.lev, f2(t.margin), f2(t.notional), t.gross.toFixed(3), t.fee, f2(t.fees), f2(t.pnl),
     t.pnl != null ? (t.pnl / t.margin * 100).toFixed(2) : '', f2(t.balance), t.liq ? '예' : '',
-    t.liq ? '강제청산' : t.reason === 'tp' ? '익절 지정가' : t.reason === 'sl' ? '손절 지정가' : '직접 청산']);
+    t.liq ? '강제청산' : t.reason === 'tp' ? '익절 지정가' : t.reason === 'sl' ? '손절 지정가' : '직접 청산',
+    addsOf(t), (t.fills || []).map((f) => `${fmtKst(f.t)} ${f.price} ${f.notional.toFixed(2)}`).join(' / ')]);
   const csv = '﻿' + [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
