@@ -122,6 +122,28 @@
     #gResult h2 { margin:0 0 4px; color:#fff; font-size:20px; }
     #gResult .bigp { font-size:24px; font-weight:700; margin:12px 0 4px; }
     #gResult button { margin-top:16px; background:#2e7d5b; border:none; color:#fff; font-weight:700; padding:10px 28px; border-radius:10px; font-size:14px; }
+
+    #side { gap:10px; }
+    .gcard { background:#1e222d; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
+    #gTurn.gcard { flex-direction:row; }
+    .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
+    .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
+    .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
+    .gacts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+    .gacts button { height:50px; font-size:14px; font-weight:700; border-radius:8px; border:none; color:#fff; padding:0 4px; flex:none; }
+    .gacts #btnLong { background:#1f7a4d; } .gacts #btnShort { background:#c2454f; } .gacts #gHoldBtn { background:#2f3546; border:1px solid #3a4054; }
+    .gacts button:hover { filter:brightness(1.1); }
+    .gacts button:disabled { opacity:.45; }
+    .gpcts { display:flex; gap:6px; align-items:center; }
+    .gpcts button { flex:1; padding:6px 0; background:#262b3c; border:1px solid #363c4e; border-radius:6px; }
+    .gpcts button.on { background:#e8eaed; color:#131722; border-color:#e8eaed; font-weight:700; }
+    .gavail { font-size:12px; }
+    .gseg { border:none !important; background:#262b3c; border-radius:8px; padding:3px; gap:3px !important; }
+    .gseg .tab { flex:1; border:none !important; border-radius:6px !important; padding:6px 0 !important; font-size:13px !important; }
+    .gseg .tab.on { background:#3a4054; color:#fff; }
+    .gkeys { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; color:var(--dim); font-size:12px; margin-top:4px; }
+    .gfixed { font-size:11px; text-align:center; }
+    .ghelp summary { cursor:pointer; color:var(--dim); font-size:12px; }
     .gHide { display:none !important; }`;
   document.head.appendChild(css);
   document.title = '차트게임';
@@ -163,10 +185,74 @@
   // 결과 칸
   const res = document.createElement('div'); res.id = 'gResult'; res.innerHTML = '<div class="rc" id="gResBody"></div>';
   $('chartRow').appendChild(res);
-  // 도움말
-  const help = document.querySelector('#side .help');
-  if (help) help.insertAdjacentHTML('afterbegin', '<b style="color:#d1d4dc">차트게임</b>: <kbd>H</kbd>/<kbd>→</kbd> 다음 봉 · <kbd>B</kbd> 매수 · <kbd>S</kbd> 매도 · <kbd>X</kbd> 청산 · <kbd>N</kbd> 다음종목. ' +
-    '50턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요.<br>');
+  // ---- 오른쪽 칸을 차트게임 사진처럼: [자산] [턴] [주문: 매수(B) 다음(H) 매도(S) · 비중] [포지션] 순서
+  const side = $('side');
+  const mk = (tag, cls, html) => { const d = document.createElement(tag); if (cls) d.className = cls; if (html != null) d.innerHTML = html; return d; };
+  const hideEl = (el) => el && el.classList.add('gHide');
+  const assetCard = mk('div', 'gcard', `<div class="ga-top"><div><div class="dim">수익률 <small>(시드 3,000 대비)</small></div><div id="gRoi" class="ga-roi num">+0.00%</div></div>` +
+    `<div style="text-align:right"><div class="dim">평가자산</div><div id="gEq" class="ga-eq num">-</div></div></div><div class="ga-line"></div>` +
+    `<div class="row2"><span class="dim">현금 (주문 가능)</span><span id="gCash" class="num">-</span></div>` +
+    `<div class="row2"><span class="dim">보유 포지션</span><span id="gHold" class="num">없음</span></div>` +
+    `<div class="row2"><span class="dim">이번 종목 손익</span><span id="gRpnl" class="num">-</span></div>`);
+  turnBox.classList.add('gcard');
+  const orderCard = mk('div', 'gcard gorder');
+  const acts = mk('div', 'gacts');
+  const holdBtn = mk('button', '', '다음 (H)'); holdBtn.id = 'gHoldBtn'; holdBtn.onclick = () => step(1);
+  const longParent = $('btnLong').parentElement;
+  acts.append($('btnLong'), holdBtn, $('btnShort'));
+  const pcts = mk('div', 'gpcts', '<span class="dim">비중</span>' + [10, 25, 50, 100].map((p) => `<button data-gp="${p}">${p}%</button>`).join('') + '<button data-gp="me" title="증거금 칸에 직접 적기">직접</button>');
+  const avail = mk('div', 'gavail dim num'); avail.id = 'gAvail';
+  const typeSeg = document.querySelector('#side .tabs'); typeSeg.classList.add('gseg');
+  const pxWrap = $('pxBox').parentElement, mWrap = $('margin').closest('.inbox').parentElement, sliderWrap = $('mSlider').parentElement;
+  const keys = mk('div', 'gkeys', '<span><kbd>B</kbd> 매수</span><span><kbd>H</kbd> 다음</span><span><kbd>S</kbd> 매도</span><span><kbd>X</kbd> 청산</span><span><kbd>N</kbd> 다음종목</span>');
+  const fixed = mk('div', 'dim gfixed', '격리 · 레버리지 3배 고정 · 수수료 지정가 0.02% · 가상 연습');
+  orderCard.append(acts, pcts, avail, typeSeg, pxWrap, mWrap, $('tpslChk').closest('label'), $('roChk').closest('label'), $('tpslBox'), keys, fixed);
+  const posCard = mk('div', 'gcard', '<div class="dim" style="margin-bottom:4px">포지션</div>');
+  posCard.append($('pos'), $('posBtns'), $('pcBox'));
+  const helpBox = mk('details', 'ghelp', '<summary>도움말</summary>');
+  [...side.querySelectorAll('.help')].forEach((h) => helpBox.appendChild(h));
+  helpBox.querySelector('.help').insertAdjacentHTML('afterbegin', '<b style="color:#d1d4dc">차트게임</b>: 50턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요. 비중 = 주문 가능 현금 중 증거금으로 쓸 비율.<br>');
+  // 안 쓰는 것 숨기기: 레버리지 칩 줄, 슬라이더, 최대 수량, 자산 제목·칸, 시작 잔고 줄, 원래 버튼 줄
+  hideEl(document.querySelector('#side .otop')); hideEl(sliderWrap); hideEl($('maxL').closest('.row2')); hideEl(longParent);
+  hideEl($('avail').closest('.row2')); hideEl($('orderHint').closest('.row2'));
+  hideEl([...side.querySelectorAll('h3')].find((h) => h.textContent.includes('자산'))); hideEl($('acct')); hideEl($('fee').parentElement);
+  side.prepend(assetCard, turnBox, orderCard, posCard);
+  side.appendChild(helpBox);
+  let pctPick = null;
+  pcts.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.gp === 'me') { pctPick = 'me'; $('margin').focus(); $('margin').select(); }
+    else { pctPick = +b.dataset.gp; setMarginPct(pctPick); }
+    paintPcts(); b.blur();
+  });
+  $('margin').addEventListener('input', () => { pctPick = 'me'; paintPcts(); });
+  function paintPcts() { pcts.querySelectorAll('button').forEach((x) => x.classList.toggle('on', String(pctPick) === x.dataset.gp)); }
+  // 매수·매도 버튼 이름: 리플레이 이름에 단축키 표시
+  const origAcct = renderAcct;
+  renderAcct = function () {
+    origAcct();
+    for (const [id, k] of [['btnLong', 'B'], ['btnShort', 'S']]) {
+      const b = $(id); b.textContent = b.textContent.replace(/ ?\((롱|숏)\)/, '') + ` (${k})`;
+    }
+    renderAsset();
+  };
+  function renderAsset() {
+    if (!G) return;
+    const p = cursor >= 0 && bars.length ? curPrice() : 0;
+    const u = open && p ? posPnl(open, p).net : 0, eq = acct.balance + u, roi = (eq / SEED - 1) * 100;
+    $('gRoi').textContent = sgn(roi) + '%'; $('gRoi').className = 'ga-roi num ' + cls(roi);
+    $('gEq').textContent = usd(eq);
+    $('gCash').textContent = usd(availBal());
+    $('gHold').innerHTML = open && p ? `<span class="${open.side === 'long' ? 'up' : 'down'}">${open.side === 'long' ? '롱' : '숏'} 3x</span> ${usd(open.notional)} <span class="${cls(u)}">(${sgn(u / open.margin * 100)}%)</span>` :
+      pendEntry ? `<span class="dim">지정가 대기 ${fmtP(pendEntry.entry)}</span>` : '<span class="dim">없음</span>';
+    const r = G.round;
+    const rp = r ? acct.balance + u - r.startBal : 0;
+    $('gRpnl').innerHTML = r ? `<span class="${cls(rp)}">${usdS(rp)}</span>` : '-';
+    const m = +$('margin').value || 0;
+    $('gAvail').innerHTML = $('roChk').checked ? `줄일 증거금 ${usd(m)}${open ? ` · 지금 증거금 ${usd(open.margin)}` : ''}` :
+      `주문 가능 ${usd(availBal())} · 이번 주문 증거금 ${usd(m)} → 크기 ${usd(m * LEV)}`;
+    holdBtn.disabled = !r || r.done || starting;
+  }
   // 시간 축: 턴 동안은 시:분만
   chart.applyOptions({ timeScale: { tickMarkFormatter: (t) => { const s = fmtKst(t - KST_OFF); return hidden() || s.slice(11) !== '00:00' ? s.slice(11) : s.slice(5, 10); } } });
 
