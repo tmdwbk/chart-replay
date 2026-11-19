@@ -372,6 +372,15 @@ cd ~/chart-replay && python3 -m http.server 8765 --bind 127.0.0.1
 
 거래량이 많았던 때의 주요 알트코인 30개 차트를 랜덤으로 여러 번 돌려 보며 직관을 키우는 연습입니다. 가상 매매이고 실제 주문은 없습니다.
 
+**윈도우는 더블클릭 한 번 (파이썬만 깔려 있으면 됨)**
+
+1. https://github.com/tmdwbk/chart-replay 에서 **[Code] → Download ZIP** 으로 받아 압축을 풀어요.
+2. 풀린 폴더에서 **`START-CHART-GAME.bat`** 을 더블클릭해요.
+   - "Windows의 PC 보호" 파란 창이 뜨면 **[추가 정보] → [실행]** 을 눌러요.
+   - 처음에는 준비물 설치와 차트 데이터 받기(약 40MB, 몇 분)를 알아서 해요.
+   - 다 되면 브라우저가 열려요. **[게임 시작]** 을 누르면 돼요.
+3. 검은 창은 게임하는 동안 켜 두고, 다 하면 닫아요. 다음부터는 2번만 하면 돼요.
+
 **준비 (처음 한 번, 약 40MB)**
 
 ```bash
@@ -449,6 +458,7 @@ game.js        차트게임 규칙 (리플레이 화면 위에 얹음)
 fetch_game.py  차트게임용 5분봉 받기 (30종목·기간은 GAME_COINS)
 draw.js/.css   그리기 도구 (두 화면 공통)
 LICENSE        코드 라이선스 (MIT)
+START-CHART-GAME.bat  윈도우: 더블클릭으로 준비·데이터 받기·차트게임 열기
 lib/           lightweight-charts (오픈소스 차트)
 data/          받은 1분봉 (data/심볼/…csv.gz, 달마다 하나) 와 목록(index.json), 차트게임 5분봉(data/game/)
 ```
