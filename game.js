@@ -7,7 +7,7 @@
 (function () {
   if (!GAME_MODE) return;
 
-  const SEED = 3000, TURNS = 50, PRE = 200, LOCK_MS = 5000, FEE_PCT = 0.02, LEV = 3;
+  const SEED = 3000, TURNS = 50, PRE = 200, LOCK_MS = 5000, FEE_PCT = 0.02, LEV = 3, DEF_MARGIN = 1000;
   const STORE = 'chart-game-v3';          // v3: 리플레이 화면 기반(2026-11-19). 리플레이 연습 계좌와 따로
   let G = null;                           // 저장되는 게임 상태
   let index = null, starting = false, lockTimer = null;
@@ -169,6 +169,7 @@
   // 레버리지·수수료 고정, 잔고 초기화 없음
   $('lev').value = LEV; $('lev').disabled = true; $('lev').title = '차트게임은 3배 고정';
   $('fee').value = FEE_PCT; $('fee').disabled = true;
+  $('margin').value = DEF_MARGIN;                       // 증거금 기본 1,000 USDT
   ['startBal', 'btnResetBal', 'hideOther', 'btnClear'].forEach((id) => { const el = $(id); if (el) (el.closest('label') || el).classList.add('gHide'); });
   [...document.querySelectorAll('#side label.dim')].forEach((l) => { if (l.textContent.includes('시작 잔고')) l.classList.add('gHide'); });
   $('fee').previousElementSibling && ($('fee').previousElementSibling.textContent = '수수료 % (지정가, 고정)');
@@ -346,6 +347,7 @@
       G.n = (G.n || 0);
       G.round = { ...pick, id: Date.now(), turn: 1, startedAt: Date.now(), startBal: acct.balance, done: false };
       open = null; pendEntry = null; reduces = [];
+      $('margin').value = DEF_MARGIN; pctPick = null; paintPcts();   // 새 종목마다 증거금 기본값으로
       drawings = []; saveDrawings();                     // 그린 것은 종목마다 새로
       showWindow(w, G.round);
       saveG();
