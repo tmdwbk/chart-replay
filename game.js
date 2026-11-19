@@ -252,6 +252,7 @@
   async function startRound() {
     if (starting) return;
     starting = true; stopPlay();
+    const prevRound = G.round;
     $('gResult').style.display = 'none';
     renderTurn();
     try {
@@ -263,6 +264,8 @@
       showWindow(w, G.round);
       saveG();
     } catch (e) {
+      console.error(e);
+      G.round = prevRound; saveG();             // 실패하면 앞 종목 상태로 되돌려 다시 누를 수 있게
       flash('차트를 불러오지 못했어요: ' + e.message, 6000);
     } finally { starting = false; renderTurn(); }
   }

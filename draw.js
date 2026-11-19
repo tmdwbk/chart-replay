@@ -260,8 +260,8 @@ function hitDraw(x, y) {                      // 마우스 아래 그림: { d, i
 
 function renderDraw() {
   const svg = $('drawLayer');
+  if (cursor < 0 || !agg.length) { svg.innerHTML = ''; return; }
   const W = Math.max(0, paneW()), H = Math.max(0, paneH());
-  const W = paneW(), H = paneH();
   let h = `<defs><clipPath id="dclip"><rect x="0" y="0" width="${W}" height="${H}"/></clipPath></defs><g clip-path="url(#dclip)">`;
   const list = visibleDrawings();
   if (creating && creating.d) list.push(creating.d);
