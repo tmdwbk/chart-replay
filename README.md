@@ -448,12 +448,16 @@ game.html      차트게임으로 가는 주소 (replay.html?game)
 game.js        차트게임 규칙 (리플레이 화면 위에 얹음)
 fetch_game.py  차트게임용 5분봉 받기 (30종목·기간은 GAME_COINS)
 draw.js/.css   그리기 도구 (두 화면 공통)
+LICENSE        코드 라이선스 (MIT)
 lib/           lightweight-charts (오픈소스 차트)
 data/          받은 1분봉 (data/심볼/…csv.gz, 달마다 하나) 와 목록(index.json), 차트게임 5분봉(data/game/)
 ```
 
 ## 데이터와 라이선스
 
+- **이 저장소의 코드**(`replay.html`, `game.js`, `draw.js`, `fetch.py`, `fetch_game.py` 등)는 [MIT 라이선스](LICENSE)입니다. 저작권 표시와 라이선스 문구만 남기면 누구나 쓰고, 고치고, 다시 나눠도 됩니다.
+  - `lib/` 의 차트 라이브러리는 MIT 가 아니라 원래 라이선스(Apache 2.0)를 따릅니다.
+  - 차트 **데이터**는 이 라이선스에 들어가지 않습니다. 아래 데이터 출처의 조건을 따릅니다.
 - **차트 데이터를 이 저장소·사이트에 올리거나 다른 사람에게 다시 배포하지 마세요.** `data/` 는 `.gitignore` 로 빠져 있습니다.
   - 바이낸스 공개 데이터([Binance Vision 이용 조건](https://github.com/binance/binance-public-data/blob/master/TERMS_AND_CONDITIONS.md), 2026-08-26 기준):
     CC BY-NC-SA 4.0. 개인적인 비상업 백테스트·비영리 교육 용도는 허용되지만, 데이터를 호스팅·판매·상업적으로 이용하는 것은 금지(4.3조).
