@@ -70,7 +70,10 @@
   .pcts input { width:62px; text-align:center; padding:6px 4px; }
   .pcts input.on { border-color:#e8eaed; }
   .levrow { display:flex; align-items:center; gap:8px; margin-top:10px; }
-  .levrow input { width:58px; text-align:right; }
+  .pline { margin-top:8px; padding:8px 10px; background:#262b3c; border-radius:8px; font-size:12px; line-height:1.55; }
+  .pline .top { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .pline .top button { margin-left:auto; padding:3px 10px; font-size:12px; }
+  .pline .roe { font-weight:700; }
   .keys { margin-top:12px; color:var(--dim); font-size:12px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   #msg { min-height:18px; margin-top:8px; font-size:12px; }
 
@@ -125,7 +128,7 @@
       <div style="border-top:1px solid var(--line); margin:10px 0 4px"></div>
       <div class="kv"><span class="k">현금(주문 가능)</span><span class="num" id="cash">-</span></div>
       <div class="kv"><span class="k">포지션</span><span class="num" id="posTxt">없음</span></div>
-      <div id="posMore" class="num" style="font-size:12px; color:var(--dim); text-align:right; margin-top:3px"></div>
+      <div id="posBox"></div>
       <div class="kv"><span class="k">이번 종목 손익</span><span class="num" id="roundPnl">-</span></div>
     </div>
     <div class="box">
@@ -147,14 +150,16 @@
         <button data-p="10">10%</button><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="100" class="on">100%</button>
         <input id="pctIn" placeholder="직접" inputmode="decimal">
       </div>
-      <div class="levrow"><span class="dim">레버리지</span><input id="lev" value="10" inputmode="numeric"><span>x</span><span class="dim" style="margin-left:auto">격리 · 시장가 · 수수료 0.05%</span></div>
+      <div class="levrow"><span class="dim">레버리지</span><b>3x 고정</b><span class="dim" style="margin-left:auto">격리 · 롱·숏 동시</span></div>
+      <div class="kv"><span class="k">수수료</span><span>지정가(메이커) 0.02%</span></div>
       <div class="kv"><span class="k" id="availK">주문 가능</span><span class="num" id="avail">-</span></div>
       <div id="msg"></div>
       <div class="keys"><span><kbd>B</kbd> 매수(롱)</span><span><kbd>H</kbd>/<kbd>→</kbd> 다음 봉</span><span><kbd>S</kbd> 매도(숏)</span><span><kbd>N</kbd> 다음종목</span></div>
     </div>
     <div class="dim" style="font-size:12px; line-height:1.6">
-      · 매수 = 롱, 매도 = 숏. 포지션과 반대 버튼은 비중만큼 줄이기(100% = 전부 청산).<br>
-      · 지금 보이는 마지막 봉 종가에 체결. 강제 청산가는 격리 증거금 기준.<br>
+      · 매수 = 롱 열기·추가, 매도 = 숏 열기·추가. 롱과 숏을 동시에 들 수 있어요.<br>
+      · 줄이기는 포지션 칸의 [정리] 버튼(고른 비중만큼, 100% = 전부).<br>
+      · 지금 보이는 마지막 봉 종가에 체결, 수수료는 지정가(메이커) 0.02%. 레버리지 3배 고정, 격리.<br>
       · 50턴째 봉 또는 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산.<br>
       · 새 종목이 시작되면 5초 동안 [다음종목]을 누를 수 없어요.<br>
       · 턴 동안 종목 이름과 날짜는 가려지고, 종목이 끝나면 공개돼요.
@@ -169,8 +174,9 @@ const SEED = 3000;              // 초기 시드 고정
 const TURNS = 50;               // 종목 하나당 턴 수
 const PRE = 200;                // 시작할 때 미리 보여 주는 봉
 const LOCK_MS = 5000;           // 새 종목 시작 후 [다음종목] 막는 시간
-const FEE = 0.0005;             // 편도 수수료 0.05%
-const STORE = 'chart-game-v1';  // 기존 연습 계좌(replay-account)와 따로
+const FEE = 0.0002;             // 편도 수수료 0.02% (지정가·메이커 수수료로 계산)
+const LEV = 3;                  // 레버리지 3배 고정
+const STORE = 'chart-game-v2';  // 기존 연습 계좌(replay-account)와 따로. v2: 3배·헤지·메이커 수수료로 바꾸며 새로 시작(2026-11-19)
 
 // draw.js 가 쓰는 공통 이름
 let meta = { symbol: 'GAME', quote: 'USDT' };
@@ -180,15 +186,17 @@ let cursor = -1;                // 보이는 봉이 있으면 0 이상
 let precision = 2;
 
 // ---------------------------------------------------------------- 상태 (브라우저에만 저장)
-let S = null;                   // { cash, lev, pos, round, history, n }
+let S = null;                   // { cash, pos: {long, short}, round, history, n }
 let full = [];                  // 이번 종목 봉 전체 (미리 보기 200 + 턴 50)
 let index = null;
 let nextLockTimer = null;
 
-function newState() { return { cash: SEED, lev: 10, pos: null, round: null, history: [], n: 0 }; }
+function newState() { return { cash: SEED, pos: { long: null, short: null }, round: null, history: [], n: 0 }; }
 function loadState() {
   try { S = JSON.parse(localStorage.getItem(STORE)); } catch (e) { S = null; }
   if (!S || typeof S.cash !== 'number') S = newState();
+  if (!S.pos || typeof S.pos !== 'object' || S.pos.side) S.pos = { long: null, short: null };
+  try { localStorage.removeItem('chart-game-v1'); } catch (e) {}   // 예전 기록은 지움(잔고 초기화)
 }
 function saveState() { localStorage.setItem(STORE, JSON.stringify(S)); }
 
@@ -228,7 +236,6 @@ const candle = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5
 const volume = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false });
 chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 candle.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.24 } });
-let entryLine = null, liqLine = null;
 
 const toC = (a) => ({ time: a.t + KST_OFF, open: a.o, high: a.h, low: a.l, close: a.c });
 const toV = (a) => ({ time: a.t + KST_OFF, value: a.v, color: a.c >= a.o ? 'rgba(38,166,154,.5)' : 'rgba(239,83,80,.5)' });
@@ -329,7 +336,10 @@ function showChart(fit) {
   cursor = agg.length - 1;
   candle.setData(agg.map(toC));
   volume.setData(agg.map(toV));
-  if (fit) chart.timeScale().setVisibleLogicalRange({ from: agg.length - 120, to: agg.length + 8 });
+  if (fit) {                // 화면이 막 보이기 시작하면 차트 크기가 0일 수 있어 다음 프레임에 맞춘다
+    const fitNow = () => chart.timeScale().setVisibleLogicalRange({ from: agg.length - 120, to: agg.length + 8 });
+    fitNow(); requestAnimationFrame(() => requestAnimationFrame(fitNow));
+  }
   legend(lastBar(), agg[agg.length - 2]);
   chart.applyOptions({});   // 눈금 이름표(날짜 가림)를 다시 그리게
 }
@@ -344,15 +354,22 @@ function appendBar() {
 }
 
 // ---------------------------------------------------------------- 계좌
+// 롱·숏을 따로 동시에 들 수 있다(헤지). 둘 다 격리 증거금, 레버리지 3배 고정.
+const SIDES = ['long', 'short'];
+const sideKo = (sd) => (sd === 'long' ? '롱' : '숏');
+const posList = () => SIDES.map((sd) => S.pos[sd]).filter(Boolean);
+const hasPos = () => posList().length > 0;
 const liqPrice = (p) => { const k = p.margin / p.notional; return p.side === 'long' ? p.entry * (1 - k) : p.entry * (1 + k); };
-function upnl(px) {                         // 미실현 손익(지금 청산할 때 수수료 포함)
-  const p = S.pos; if (!p) return 0;
+function upnlOf(p, px) {                    // 미실현 손익(지금 청산할 때 수수료 포함)
+  if (!p) return 0;
   const qty = p.notional / p.entry;
   return (p.side === 'long' ? 1 : -1) * qty * (px - p.entry) - qty * px * FEE;
 }
+const roeOf = (p, px) => upnlOf(p, px) / p.margin * 100;
+function upnl(px) { return posList().reduce((s, p) => s + upnlOf(p, px), 0); }
 function equity() {
   const px = agg.length ? lastBar().c : 0;
-  return S.cash + (S.pos ? S.pos.margin + upnl(px) : 0);
+  return S.cash + posList().reduce((s, p) => s + p.margin + upnlOf(p, px), 0);
 }
 function curPct() {
   const v = $('pctIn').value.trim();
@@ -360,49 +377,50 @@ function curPct() {
   const b = document.querySelector('#pcts button.on');
   return b ? +b.dataset.p : 100;
 }
-function getLev() { let l = Math.round(+$('lev').value || 10); l = Math.min(125, Math.max(1, l)); return l; }
 
-function closePart(frac, why) {             // frac: 포지션의 몇 분의 몇을 지금 종가에 닫을지
-  const p = S.pos; if (!p) return 0;
+function closePart(side, frac, why) {       // 그 방향 포지션의 frac 만큼을 지금 종가에 닫는다
+  const p = S.pos[side]; if (!p) return 0;
   const px = lastBar().c;
   frac = Math.min(1, Math.max(0, frac));
   const qty = p.notional / p.entry * frac;
   const margin = p.margin * frac;
-  const pnl = (p.side === 'long' ? 1 : -1) * qty * (px - p.entry) - qty * px * FEE;
+  const pnl = (side === 'long' ? 1 : -1) * qty * (px - p.entry) - qty * px * FEE;
   S.cash += margin + pnl;
   S.round.pnl += pnl;
-  if (frac >= 0.9999) S.pos = null;
+  if (frac >= 0.9999) S.pos[side] = null;
   else { p.notional *= 1 - frac; p.margin *= 1 - frac; }
-  if (why) flash(`${why}: ${usdS(pnl)} (종가 ${fmtP(px)})`, 3200, pnl >= 0 ? 'up' : 'down');
+  if (why) flash(`${sideKo(side)} ${why}: ${usdS(pnl)} (종가 ${fmtP(px)})`, 3200, pnl >= 0 ? 'up' : 'down');
   return pnl;
 }
+function closeSide(side) {                  // [정리] 버튼: 비중만큼 줄이기 (100% = 전부)
+  if (!S.round || S.round.done || !S.pos[side]) return;
+  const pct = curPct() / 100;
+  if (pct <= 0) { flash('비중을 골라 주세요.'); return; }
+  closePart(side, pct, pct >= 0.9999 ? '청산' : `${Math.round(pct * 100)}% 줄임`);
+  S.round.acts++;
+  afterChange();
+}
 
-function order(side) {
+function order(side) {                      // 매수 = 롱 열기·추가, 매도 = 숏 열기·추가
   if (!S.round || S.round.done) return;
   const px = lastBar().c;
   const pct = curPct() / 100;
   if (pct <= 0) { flash('비중을 골라 주세요.'); return; }
-  const p = S.pos;
-  if (p && p.side !== side) {                // 반대 버튼 = 비중만큼 줄이기
-    closePart(pct, pct >= 0.9999 ? '청산' : `${Math.round(pct * 100)}% 줄임`);
-    S.round.acts++;
-    afterChange(); return;
-  }
-  const lev = p ? p.lev : getLev();
   if (S.cash < 1) { flash('더 이상 주문할 수 없음 (현금 부족)'); return; }
-  const margin = pct >= 0.9999 ? S.cash / (1 + lev * FEE) : S.cash * pct;
-  const notional = margin * lev;
+  const margin = pct >= 0.9999 ? S.cash / (1 + LEV * FEE) : S.cash * pct;
+  const notional = margin * LEV;
   const fee = notional * FEE;
   if (margin + fee > S.cash + 1e-9 || margin < 0.5) { flash('주문 금액이 너무 작거나 현금이 모자라요.'); return; }
   S.cash -= margin + fee;
   S.round.pnl -= fee;
-  if (p) {                                   // 같은 방향 = 추가매수, 평단 다시 계산
+  const p = S.pos[side];
+  if (p) {                                   // 같은 방향 = 추가, 평단 다시 계산
     const q0 = p.notional / p.entry, q1 = notional / px;
     p.notional += notional; p.margin += margin;
     p.entry = p.notional / (q0 + q1);
     p.adds++;
   } else {
-    S.pos = { side, entry: px, notional, margin, lev, adds: 0 };
+    S.pos[side] = { side, entry: px, notional, margin, lev: LEV, adds: 0 };
     S.round.entries++;
   }
   S.round.acts++;
@@ -410,14 +428,15 @@ function order(side) {
   afterChange();
 }
 
-function checkLiq(a) {                       // 새 봉이 강제 청산가를 건드렸는지
-  const p = S.pos; if (!p) return;
-  const lq = liqPrice(p);
-  if ((p.side === 'long' && a.l <= lq) || (p.side === 'short' && a.h >= lq)) {
-    S.round.pnl -= p.margin;
-    S.round.liq = true;
-    S.pos = null;
-    flash(`강제 청산: 증거금 ${usd(p.margin)} 잃음 (청산가 ${fmtP(lq)})`, 4500);
+function checkLiq(a) {                       // 새 봉이 강제 청산가를 건드렸는지 (방향마다 따로)
+  for (const p of posList()) {
+    const lq = liqPrice(p);
+    if ((p.side === 'long' && a.l <= lq) || (p.side === 'short' && a.h >= lq)) {
+      S.round.pnl -= p.margin;
+      S.round.liq = true;
+      S.pos[p.side] = null;
+      flash(`${sideKo(p.side)} 강제 청산: 증거금 ${usd(p.margin)} 잃음 (청산가 ${fmtP(lq)})`, 4500);
+    }
   }
 }
 
@@ -434,7 +453,7 @@ function nextTurn() {
 
 function endRound(why) {
   const r = S.round;
-  if (S.pos) closePart(1, null);
+  for (const sd of SIDES) if (S.pos[sd]) closePart(sd, 1, null);
   r.done = true;
   const a0 = full[r.firstTurn], a1 = full[turnIdx()];
   S.n++;
@@ -493,7 +512,7 @@ async function resumeRound() {               // 새로고침 뒤 이어하기
   const c = index.coins.find((x) => x.short === r.short);
   const w = c ? await buildWindow(c.periods[r.pk], r.start) : null;
   if (!w) {                                   // 데이터가 바뀌어 같은 차트를 못 찾으면 그 종목은 지금 상태로 끝낸다
-    full = []; agg = []; S.round = null; S.pos = null; saveState(); return startRound();
+    full = []; agg = []; S.round = null; S.pos = { long: null, short: null }; saveState(); return startRound();
   }
   full = w.rows; r.firstTurn = w.firstTurn;
   setPrecisionFor(full[w.firstTurn].c);
@@ -509,36 +528,31 @@ function render() {
   $('roi').textContent = sgn(roi) + '%'; $('roi').className = 'num ' + cls(roi);
   $('eq').textContent = usd(eq);
   $('cash').textContent = usd(S.cash);
-  const p = S.pos;
-  if (p && agg.length) {
-    const px = lastBar().c, u = upnl(px);
-    $('posTxt').innerHTML = `<span class="${p.side === 'long' ? 'up' : 'down'}">${p.side === 'long' ? '롱' : '숏'} ${p.lev}x</span> ${usd(p.notional)}`;
-    $('posMore').innerHTML = `평단 ${fmtP(p.entry)} · 증거금 ${usd(p.margin)} · 청산가 ${fmtP(liqPrice(p))}<br>` +
-      `미실현 <span class="${cls(u)}">${usdS(u)} (ROE ${sgn(u / p.margin * 100)}%)</span>${p.adds ? ` · 추가 ${p.adds}회` : ''}`;
-  } else { $('posTxt').textContent = '없음'; $('posMore').innerHTML = ''; }
+  const px = agg.length ? lastBar().c : 0;
+  const ps = posList();
+  $('posTxt').innerHTML = ps.length ? ps.map((p) => `<span class="${p.side === 'long' ? 'up' : 'down'}">${sideKo(p.side)}</span>`).join(' · ') : '없음';
+  const pct = curPct();
+  $('posBox').innerHTML = agg.length ? ps.map((p) => {
+    const u = upnlOf(p, px), roe = roeOf(p, px);
+    return `<div class="pline num"><div class="top"><b class="${p.side === 'long' ? 'up' : 'down'}">${sideKo(p.side)} ${LEV}x</b> ${usd(p.notional)}` +
+      ` <span class="roe ${cls(roe)}">${sgn(roe)}%</span><button data-close="${p.side}">정리 ${pct}%</button></div>` +
+      `<span class="dim">평단 ${fmtP(p.entry)} · 증거금 ${usd(p.margin)} · 청산가 ${fmtP(liqPrice(p))}</span><br>` +
+      `미실현 <span class="${cls(u)}">${usdS(u)}</span>${p.adds ? ` <span class="dim">· 추가 ${p.adds}회</span>` : ''}</div>`;
+  }).join('') : '';
   const r = S.round;
   if (r) {
-    const rp = r.pnl + (p ? upnl(lastBar().c) : 0);
+    const rp = r.pnl + upnl(px);
     $('roundPnl').innerHTML = `<span class="${cls(rp)}">${usdS(rp)}</span>`;
     $('turnTxt').textContent = `${r.turn}/${TURNS}`;
     $('progBar').style.width = (r.turn / TURNS * 100) + '%';
   }
-  // 주문 가능 / 줄이기 안내
-  const pct = curPct();
-  if (p) {
-    $('availK').textContent = '주문 가능';
-    $('avail').innerHTML = `${usd(S.cash)} <span class="dim">· 반대 버튼 = 포지션 ${pct}% 줄이기</span>`;
-  } else {
-    const lev = getLev();
-    const m = pct >= 100 ? S.cash / (1 + lev * FEE) : S.cash * pct / 100;
-    $('availK').textContent = '주문 가능';
-    $('avail').innerHTML = `${usd(S.cash)} <span class="dim">· 이번 주문 ${usd(m * lev)}</span>`;
-  }
-  $('lev').disabled = !!p;
+  const m = pct >= 100 ? S.cash / (1 + LEV * FEE) : S.cash * pct / 100;
+  $('availK').textContent = '주문 가능';
+  $('avail').innerHTML = `${usd(S.cash)} <span class="dim">· 이번 주문 ${usd(m * LEV)}</span>`;
   const playing = r && !r.done;
-  $('btnBuy').disabled = $('btnSell').disabled = !playing || (S.cash < 1 && !p);
+  $('btnBuy').disabled = $('btnSell').disabled = !playing || S.cash < 1;
   $('btnHold').disabled = !playing || r.turn >= TURNS;
-  if (playing && S.cash < 1 && !p) $('msg').innerHTML = '<span class="down">더 이상 주문할 수 없음</span>';
+  if (playing && S.cash < 1 && !ps.length) $('msg').innerHTML = '<span class="down">더 이상 주문할 수 없음</span>';
   updateNextBtn();
   syncLines();
   renderHist();
@@ -555,12 +569,18 @@ function updateNextBtn() {
   } else { b.disabled = false; b.textContent = '⏩ 다음종목'; }
 }
 
+// 차트의 평단선 이름표에 지금 포지션 수익률(ROE, 증거금 대비 · 수수료 포함)을 같이 보여 준다
+let posLines = [];
 function syncLines() {
-  if (entryLine) { candle.removePriceLine(entryLine); entryLine = null; }
-  if (liqLine) { candle.removePriceLine(liqLine); liqLine = null; }
-  const p = S.pos; if (!p) return;
-  entryLine = candle.createPriceLine({ price: p.entry, color: p.side === 'long' ? '#26a69a' : '#ef5350', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: `${p.side === 'long' ? '롱' : '숏'} 평단` });
-  liqLine = candle.createPriceLine({ price: liqPrice(p), color: '#f0b90b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '청산가' });
+  posLines.forEach((l) => candle.removePriceLine(l)); posLines = [];
+  if (!agg.length) return;
+  const px = lastBar().c;
+  for (const p of posList()) {
+    const roe = roeOf(p, px);
+    posLines.push(candle.createPriceLine({ price: p.entry, color: p.side === 'long' ? '#26a69a' : '#ef5350', lineWidth: 2, lineStyle: 0,
+      axisLabelVisible: true, title: `${sideKo(p.side)} ${sgn(roe)}%` }));
+    posLines.push(candle.createPriceLine({ price: liqPrice(p), color: '#f0b90b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `${sideKo(p.side)} 청산가` }));
+  }
 }
 
 function renderHist() {
@@ -578,7 +598,7 @@ function afterChange() { saveState(); render(); }
 
 // ---------------------------------------------------------------- 시작 화면
 function renderHome() {
-  const eq = S.cash + (S.pos ? S.pos.margin : 0);
+  const eq = S.cash + posList().reduce((x, p) => x + p.margin, 0);
   $('homeEq').textContent = usd(eq);
   const roi = (eq / SEED - 1) * 100;
   $('homeRoi').textContent = sgn(roi) + '%'; $('homeRoi').className = 'r num ' + cls(roi);
@@ -588,6 +608,7 @@ async function enterGame() {
   if (!index) return;
   $('home').style.display = 'none';
   $('game').style.display = 'flex';
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));   // 차트 크기가 잡힌 뒤 시작
   if (S.round) await resumeRound(); else await startRound();
 }
 
@@ -608,7 +629,7 @@ $('pctIn').addEventListener('input', () => {
   document.querySelectorAll('#pcts button').forEach((x) => x.classList.toggle('on', !on && x.dataset.p === '100'));
   render();
 });
-$('lev').addEventListener('change', () => { $('lev').value = getLev(); S.lev = getLev(); saveState(); render(); });
+$('posBox').addEventListener('click', (e) => { const b = e.target.closest('button[data-close]'); if (b) closeSide(b.dataset.close); });
 document.addEventListener('keydown', (e) => {
   if ($('game').style.display !== 'flex') return;
   const t = e.target.tagName;
@@ -625,7 +646,6 @@ document.addEventListener('click', (e) => { const b = e.target.closest('button')
 
 // ---------------------------------------------------------------- 시작
 loadState();
-$('lev').value = S.lev || 10;
 renderHome();
 (async () => {
   try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
