@@ -299,7 +299,7 @@ const chart = LightweightCharts.createChart($('chart'), {
   autoSize: true,
   layout: { background: { color: '#131722' }, textColor: '#d1d4dc', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif' },
   grid: { vertLines: { color: '#1f2433' }, horzLines: { color: '#1f2433' } },
-  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { visible: false }, horzLine: { visible: false } },
   rightPriceScale: { borderColor: '#2a2e39' },
   timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 8 },
   localization: { locale: 'ko-KR', timeFormatter: (t) => fmtKst(t - KST_OFF) },
