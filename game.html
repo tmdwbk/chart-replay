@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>차트게임</title>
+<script src="lib/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="draw.css">
+<style>
+  :root { --bg:#131722; --panel:#1c2030; --card:#1e222d; --line:#2a2e39; --text:#d1d4dc; --dim:#868b98; --up:#26a69a; --down:#ef5350; --accent:#2962ff; --green:#2e7d5b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px -apple-system, "Apple SD Gothic Neo", sans-serif; height:100vh; display:flex; flex-direction:column; }
+  a { color:#5b8def; text-decoration:none; }
+  button { background:#262b3c; color:var(--text); border:1px solid #363c4e; border-radius:6px; padding:5px 9px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:#5a6175; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  input { background:#262b3c; color:var(--text); border:1px solid #363c4e; border-radius:6px; padding:5px 8px; font:inherit; }
+  .up { color:var(--up); } .down { color:var(--down); } .dim { color:var(--dim); }
+  .num { font-variant-numeric:tabular-nums; }
+  kbd { display:inline-block; min-width:18px; text-align:center; background:#262b3c; border:1px solid #363c4e; border-radius:3px; padding:0 4px; font:11px ui-monospace, Menlo, monospace; color:#b2b5be; }
+
+  header { display:flex; align-items:center; gap:14px; padding:9px 14px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header b { font-size:15px; color:#fff; }
+
+  /* 시작 화면 카드 */
+  #home { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { width:390px; background:linear-gradient(180deg, #1b2a24 0%, #1a1f2b 55%); border:1px solid #2b3a33; border-radius:28px; padding:34px 26px 26px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.45); }
+  .card .ico { width:150px; height:150px; margin:0 auto 18px; border-radius:50%; background:radial-gradient(circle, #23493a 0%, #1b2f28 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
+  .card .ico svg { width:84px; height:84px; filter:drop-shadow(0 6px 12px rgba(38,166,154,.35)); }
+  .card .kick { color:#4caf85; letter-spacing:.22em; font-weight:700; font-size:12px; }
+  .card h1 { color:#fff; font-size:22px; margin:8px 0 10px; }
+  .card p { color:#a3a8b5; line-height:1.6; margin:0 0 20px; font-size:13.5px; }
+  .card .row { display:flex; justify-content:space-between; align-items:center; background:#232838; border-radius:14px; padding:16px 20px; margin-bottom:10px; }
+  .card .row .l { color:var(--dim); } .card .row .r { color:#fff; font-size:18px; font-weight:700; }
+  .card .go { width:100%; background:var(--green); border:none; border-radius:16px; padding:17px 0; color:#fff; font-size:16px; font-weight:700; margin-top:6px; }
+  .card .go:hover { background:#348c66; }
+  .card .note { margin-top:14px; font-size:12px; color:var(--dim); line-height:1.5; }
+
+  /* 게임 화면 */
+  #game { flex:1; display:none; min-height:0; }
+  #left { flex:1; min-width:0; display:flex; flex-direction:column; }
+  #chart { flex:1; min-width:0; min-height:0; position:relative; overflow:hidden; cursor:crosshair; }
+  #legend { position:absolute; top:6px; left:8px; z-index:5; pointer-events:none; font-size:13px; font-variant-numeric:tabular-nums; background:rgba(19,23,34,.75); padding:3px 6px; border-radius:4px; }
+  #legend .k { color:var(--dim); margin-left:9px; } #legend .k:first-child { margin-left:0; }
+  #bottom { height:200px; flex:none; border-top:1px solid var(--line); background:#161a25; display:flex; flex-direction:column; }
+  #bottom .bh { padding:8px 12px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; }
+  #hist { flex:1; overflow:auto; }
+  #hist table { border-collapse:collapse; width:100%; font-size:12px; }
+  #hist th { position:sticky; top:0; background:#161a25; color:var(--dim); font-weight:normal; text-align:left; padding:6px 10px; white-space:nowrap; }
+  #hist td { padding:5px 10px; white-space:nowrap; border-top:1px solid #1f2433; }
+  #hist .empty { text-align:center; color:var(--dim); padding:34px 0; }
+
+  #side { width:350px; flex:none; border-left:1px solid var(--line); background:var(--panel); padding:12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .kv { display:flex; justify-content:space-between; align-items:baseline; margin-top:6px; }
+  .kv .k { color:var(--dim); }
+  #roi { font-size:26px; font-weight:700; }
+  #eq { font-size:20px; font-weight:700; color:#fff; }
+  .turnrow { display:flex; align-items:center; gap:10px; }
+  .prog { flex:1; height:6px; background:#2a2e39; border-radius:3px; overflow:hidden; }
+  .prog i { display:block; height:100%; width:0; background:#5b8def; border-radius:3px; transition:width .15s; }
+  #btnNextCoin { background:#1e2a4a; border-color:#2f4a8a; color:#8fb0ff; white-space:nowrap; min-width:92px; }
+  .acts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .acts button { height:52px; font-size:15px; font-weight:700; border-radius:8px; }
+  #btnBuy { background:#1f7a4d; border-color:#26a069; color:#fff; }
+  #btnSell { background:#a8363a; border-color:#d0464a; color:#fff; }
+  #btnHold { background:#2a2f40; }
+  .pcts { display:flex; gap:6px; align-items:center; margin-top:12px; }
+  .pcts button { flex:1; padding:6px 0; }
+  .pcts button.on { background:#e8eaed; color:#131722; border-color:#e8eaed; font-weight:700; }
+  .pcts input { width:62px; text-align:center; padding:6px 4px; }
+  .pcts input.on { border-color:#e8eaed; }
+  .levrow { display:flex; align-items:center; gap:8px; margin-top:10px; }
+  .levrow input { width:58px; text-align:right; }
+  .keys { margin-top:12px; color:var(--dim); font-size:12px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #msg { min-height:18px; margin-top:8px; font-size:12px; }
+
+  #chartRow { position:relative; }
+  #result { position:absolute; inset:0; z-index:8; display:none; align-items:center; justify-content:center; background:rgba(10,12,18,.55); }
+  #result .rc { background:var(--card); border:1px solid #363c4e; border-radius:14px; padding:22px 26px; min-width:340px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  #result h2 { margin:0 0 4px; color:#fff; font-size:20px; }
+  #result .big { font-size:24px; font-weight:700; margin:12px 0 4px; }
+  #result button { margin-top:16px; background:var(--green); border:none; color:#fff; font-weight:700; padding:10px 28px; border-radius:10px; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="replay.html">← 차트 리플레이</a>
+  <b>차트게임</b>
+  <span class="dim">가상 연습 · 실제 주문 아님 · 5분봉 고정</span>
+  <span style="margin-left:auto" class="dim" id="hdrNote"></span>
+</header>
+
+<section id="home">
+  <div class="card">
+    <div class="ico"><svg viewBox="0 0 64 64" fill="none"><path d="M6 46 L22 30 L32 38 L50 18" stroke="#3ddc97" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M40 16 H52 V28" stroke="#3ddc97" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 54 H58" stroke="#2c6b51" stroke-width="3" stroke-linecap="round"/></svg></div>
+    <div class="kick">CHART GAME</div>
+    <h1>차트게임</h1>
+    <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 5분봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 50턴, 시드는 3,000 USDT로 시작해 계속 이어집니다.</p>
+    <div class="row"><span class="l">평가자산</span><span class="r num" id="homeEq">$3,000.00</span></div>
+    <div class="row"><span class="l">시드 대비</span><span class="r num" id="homeRoi">+0.00%</span></div>
+    <button class="go" id="btnGo">게임 시작</button>
+    <div class="note" id="homeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음</div>
+  </div>
+</section>
+
+<section id="game">
+  <div id="left">
+    <div id="chartRow">
+      <div id="tools"></div>
+      <div id="chart"><div id="legend"></div><svg id="drawLayer"></svg><div id="drawBar"></div>
+        <input id="drawInput" placeholder="글자를 쓰고 Enter"><button id="zoomReset" title="확대 전으로 돌아가기">↺ 확대 풀기</button></div>
+      <div id="result"><div class="rc" id="resultBody"></div></div>
+    </div>
+    <div id="bottom">
+      <div class="bh"><b>지난 종목 기록</b><span class="dim num" id="histSum"></span></div>
+      <div id="hist"></div>
+    </div>
+  </div>
+  <aside id="side">
+    <div class="box">
+      <div class="kv" style="margin-top:0">
+        <div><div class="dim">수익률 <span style="font-size:11px">(시드 3,000 대비)</span></div><div id="roi" class="num">+0.00%</div></div>
+        <div style="text-align:right"><div class="dim">평가자산</div><div id="eq" class="num">$3,000.00</div></div>
+      </div>
+      <div style="border-top:1px solid var(--line); margin:10px 0 4px"></div>
+      <div class="kv"><span class="k">현금(주문 가능)</span><span class="num" id="cash">-</span></div>
+      <div class="kv"><span class="k">포지션</span><span class="num" id="posTxt">없음</span></div>
+      <div id="posMore" class="num" style="font-size:12px; color:var(--dim); text-align:right; margin-top:3px"></div>
+      <div class="kv"><span class="k">이번 종목 손익</span><span class="num" id="roundPnl">-</span></div>
+    </div>
+    <div class="box">
+      <div class="turnrow">
+        <span class="dim">턴</span>
+        <div class="prog"><i id="progBar"></i></div>
+        <span class="num" id="turnTxt">1/50</span>
+        <button id="btnNextCoin">⏩ 다음종목</button>
+      </div>
+    </div>
+    <div class="box">
+      <div class="acts">
+        <button id="btnBuy">매수 (B)</button>
+        <button id="btnHold">다음 (H)</button>
+        <button id="btnSell">매도 (S)</button>
+      </div>
+      <div class="pcts" id="pcts">
+        <span class="dim">비중</span>
+        <button data-p="10">10%</button><button data-p="25">25%</button><button data-p="50">50%</button><button data-p="100" class="on">100%</button>
+        <input id="pctIn" placeholder="직접" inputmode="decimal">
+      </div>
+      <div class="levrow"><span class="dim">레버리지</span><input id="lev" value="10" inputmode="numeric"><span>x</span><span class="dim" style="margin-left:auto">격리 · 시장가 · 수수료 0.05%</span></div>
+      <div class="kv"><span class="k" id="availK">주문 가능</span><span class="num" id="avail">-</span></div>
+      <div id="msg"></div>
+      <div class="keys"><span><kbd>B</kbd> 매수(롱)</span><span><kbd>H</kbd> 다음</span><span><kbd>S</kbd> 매도(숏)</span><span><kbd>N</kbd> 다음종목</span></div>
+    </div>
+    <div class="dim" style="font-size:12px; line-height:1.6">
+      · 매수 = 롱, 매도 = 숏. 포지션과 반대 버튼은 비중만큼 줄이기(100% = 전부 청산).<br>
+      · 지금 보이는 마지막 봉 종가에 체결. 강제 청산가는 격리 증거금 기준.<br>
+      · 50턴째 봉 또는 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산.<br>
+      · 새 종목이 시작되면 5초 동안 [다음종목]을 누를 수 없어요.<br>
+      · 턴 동안 종목 이름과 날짜는 가려지고, 종목이 끝나면 공개돼요.
+    </div>
+  </aside>
+</section>
+
+<script>
+const KST_OFF = 9 * 3600;
+const $ = (id) => document.getElementById(id);
+const SEED = 3000;              // 초기 시드 고정
+const TURNS = 50;               // 종목 하나당 턴 수
+const PRE = 200;                // 시작할 때 미리 보여 주는 봉
+const LOCK_MS = 5000;           // 새 종목 시작 후 [다음종목] 막는 시간
+const FEE = 0.0005;             // 편도 수수료 0.05%
+const STORE = 'chart-game-v1';  // 기존 연습 계좌(replay-account)와 따로
+
+// draw.js 가 쓰는 공통 이름
+let meta = { symbol: 'GAME', quote: 'USDT' };
+let tfSec = 300;
+let agg = [];                   // 지금까지 보이는 5분봉
+let cursor = -1;                // 보이는 봉이 있으면 0 이상
+let precision = 2;
+
+// ---------------------------------------------------------------- 상태 (브라우저에만 저장)
+let S = null;                   // { cash, lev, pos, round, history, n }
+let full = [];                  // 이번 종목 봉 전체 (미리 보기 200 + 턴 50)
+let index = null;
+let nextLockTimer = null;
+
+function newState() { return { cash: SEED, lev: 10, pos: null, round: null, history: [], n: 0 }; }
+function loadState() {
+  try { S = JSON.parse(localStorage.getItem(STORE)); } catch (e) { S = null; }
+  if (!S || typeof S.cash !== 'number') S = newState();
+}
+function saveState() { localStorage.setItem(STORE, JSON.stringify(S)); }
+
+// ---------------------------------------------------------------- 표시 도구
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmtKstReal(ts) {
+  const d = new Date((ts + KST_OFF) * 1000);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+const hidden = () => !!(S && S.round && !S.round.done);
+// 턴 동안은 날짜를 가린다(시각만). draw.js 의 수직선 이름표도 이걸 쓴다.
+function fmtKst(ts) { const s = fmtKstReal(ts); return hidden() ? '····-··-·· ' + s.slice(11) : s; }
+function fmtP(p) { return Number(p).toFixed(precision); }
+function fmtBig(x) { if (x >= 1e8) return (x / 1e8).toFixed(2) + '억'; if (x >= 1e4) return (x / 1e4).toFixed(1) + '만'; return x.toFixed(0); }
+function sgn(x, d = 2) { return (x > 0 ? '+' : '') + x.toFixed(d); }
+const cls = (x) => (x > 0 ? 'up' : x < 0 ? 'down' : 'dim');
+const usd = (x) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usdS = (x) => (x > 0 ? '+' : '') + usd(x);
+let msgTimer = null;
+function flash(msg, ms = 2600, kind = 'down') {
+  $('msg').innerHTML = `<span class="${kind}">${msg}</span>`;
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { $('msg').innerHTML = ''; }, ms);
+}
+
+// ---------------------------------------------------------------- 차트
+const chart = LightweightCharts.createChart($('chart'), {
+  autoSize: true,
+  layout: { background: { color: '#131722' }, textColor: '#d1d4dc', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif' },
+  grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  rightPriceScale: { borderColor: '#2a2e39' },
+  timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 8,
+    tickMarkFormatter: (t) => { const s = fmtKst(t - KST_OFF); return hidden() ? s.slice(11) : (s.slice(11) === '00:00' ? s.slice(5, 10) : s.slice(11)); } },
+  localization: { locale: 'ko-KR', timeFormatter: (t) => fmtKst(t - KST_OFF) },
+});
+const candle = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
+const volume = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false });
+chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+candle.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.24 } });
+let entryLine = null, liqLine = null;
+
+const toC = (a) => ({ time: a.t + KST_OFF, open: a.o, high: a.h, low: a.l, close: a.c });
+const toV = (a) => ({ time: a.t + KST_OFF, value: a.v, color: a.c >= a.o ? 'rgba(38,166,154,.5)' : 'rgba(239,83,80,.5)' });
+
+function setPrecisionFor(price) {
+  precision = Math.min(8, Math.max(2, 4 - Math.floor(Math.log10(Math.max(price, 1e-9)))));
+  candle.applyOptions({ priceFormat: { type: 'price', precision, minMove: Math.pow(10, -precision) } });
+}
+
+function legend(a, prev) {
+  if (!a) { $('legend').innerHTML = ''; return; }
+  const ch = prev ? (a.c / prev.c - 1) * 100 : 0;
+  const c = a.c >= a.o ? 'up' : 'down';
+  $('legend').innerHTML = `<span class="k">${hidden() ? '??? · 5분' : esc(S.round.name) + ' ' + S.round.short + ' · 5분'}</span>` +
+    `<span class="k">시</span> <span class="${c}">${fmtP(a.o)}</span><span class="k">고</span> <span class="${c}">${fmtP(a.h)}</span>` +
+    `<span class="k">저</span> <span class="${c}">${fmtP(a.l)}</span><span class="k">종</span> <span class="${c}">${fmtP(a.c)}</span>` +
+    `<span class="k">등락</span> <span class="${cls(ch)}">${sgn(ch)}%</span><span class="k">거래대금</span> ${fmtBig(a.qv || a.v * a.c)}`;
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+chart.subscribeCrosshairMove((p) => {
+  if (!agg.length) return;
+  let i = agg.length - 1;
+  if (p && p.time != null) { const k = agg.findIndex((a) => a.t + KST_OFF === p.time); if (k >= 0) i = k; }
+  legend(agg[i], agg[i - 1]);
+});
+
+// ---------------------------------------------------------------- 데이터
+async function fetchText(url) {
+  const res = await fetch(url, url.endsWith('index.json') ? { cache: 'no-store' } : {});
+  if (!res.ok) throw new Error(res.status);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  if (buf[0] === 0x1f && buf[1] === 0x8b) return await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  return new TextDecoder().decode(buf);
+}
+const fileCache = new Map();
+async function loadFile(f) {
+  if (!fileCache.has(f)) {
+    fileCache.set(f, fetchText('data/' + f).then((txt) => {
+      const out = [];
+      const lines = txt.split(/\r?\n/);
+      for (let i = 1; i < lines.length; i++) {
+        const r = lines[i].split(',');
+        if (r.length < 6) continue;
+        out.push({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], qv: r[6] ? +r[6] : 0 });
+      }
+      return out;
+    }));
+    if (fileCache.size > 12) fileCache.delete(fileCache.keys().next().value);
+  }
+  return fileCache.get(f);
+}
+const ymOf = (ts) => { const d = new Date(ts * 1000); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`; };
+
+// 기간 안에서 start(첫 턴 봉 시각) 를 받으면 그 앞 200봉 + 뒤 49봉을 모은다. 빈 구간이 있으면 null.
+async function buildWindow(per, start) {
+  const from = start - (PRE - 1) * 300, to = start + (TURNS - 1) * 300;
+  if (from < per.start || to >= per.end) return null;
+  const months = [...new Set([ymOf(from), ymOf(to)])];
+  if (months.some((m) => !per.files[m])) return null;
+  const parts = await Promise.all(months.map((m) => loadFile(per.files[m])));
+  const rows = [].concat(...parts).filter((a) => a.t >= from && a.t <= to);
+  const seen = new Set(); const out = [];
+  for (const a of rows) if (!seen.has(a.t)) { seen.add(a.t); out.push(a); }
+  out.sort((a, b) => a.t - b.t);
+  const firstTurn = out.findIndex((a) => a.t === start);
+  if (out.length < PRE + TURNS - 1 - 3 || firstTurn < PRE - 1 - 3) return null;  // 봉이 몇 개 빠진 정도는 괜찮다
+  return { rows: out, firstTurn };
+}
+
+async function pickRound() {
+  const coins = index.coins;
+  const last = S.history.length ? S.history[S.history.length - 1] : null;
+  for (let tries = 0; tries < 40; tries++) {
+    const c = coins[Math.floor(Math.random() * coins.length)];
+    if (last && coins.length > 1 && c.short === last.short && tries < 30) continue;   // 같은 종목 연달아 피하기
+    // 종목 안에서는 기간 길이에 비례해 시각을 뽑는다
+    const spans = c.periods.map((p) => Math.max(0, (p.end - p.start) / 300 - PRE - TURNS));
+    const tot = spans.reduce((s, x) => s + x, 0);
+    if (tot <= 0) continue;
+    let r = Math.random() * tot, k = 0;
+    while (k < spans.length - 1 && r >= spans[k]) { r -= spans[k]; k++; }
+    const per = c.periods[k];
+    const start = per.start + (PRE - 1 + Math.floor(Math.random() * spans[k])) * 300;
+    const w = await buildWindow(per, start);
+    if (!w) continue;
+    return { short: c.short, name: c.name, symbol: c.symbol, pk: k, start, sources: per.sources };
+  }
+  throw new Error('뽑을 수 있는 차트가 없어요');
+}
+
+// ---------------------------------------------------------------- 그리기
+function turnIdx() { return S.round.firstTurn + S.round.turn - 1; }   // full 안에서 지금 보이는 마지막 봉
+function lastBar() { return agg[agg.length - 1]; }
+
+function showChart(fit) {
+  const upto = turnIdx();
+  agg = full.slice(0, upto + 1);
+  cursor = agg.length - 1;
+  candle.setData(agg.map(toC));
+  volume.setData(agg.map(toV));
+  if (fit) chart.timeScale().setVisibleLogicalRange({ from: agg.length - 120, to: agg.length + 8 });
+  legend(lastBar(), agg[agg.length - 2]);
+  chart.applyOptions({});   // 눈금 이름표(날짜 가림)를 다시 그리게
+}
+function appendBar() {
+  const upto = turnIdx();
+  while (agg.length <= upto) {
+    const a = full[agg.length];
+    agg.push(a); candle.update(toC(a)); volume.update(toV(a));
+  }
+  cursor = agg.length - 1;
+  legend(lastBar(), agg[agg.length - 2]);
+}
+
+// ---------------------------------------------------------------- 계좌
+const liqPrice = (p) => { const k = p.margin / p.notional; return p.side === 'long' ? p.entry * (1 - k) : p.entry * (1 + k); };
+function upnl(px) {                         // 미실현 손익(지금 청산할 때 수수료 포함)
+  const p = S.pos; if (!p) return 0;
+  const qty = p.notional / p.entry;
+  return (p.side === 'long' ? 1 : -1) * qty * (px - p.entry) - qty * px * FEE;
+}
+function equity() {
+  const px = agg.length ? lastBar().c : 0;
+  return S.cash + (S.pos ? S.pos.margin + upnl(px) : 0);
+}
+function curPct() {
+  const v = $('pctIn').value.trim();
+  if (v !== '') { const x = parseFloat(v); return isFinite(x) ? Math.min(100, Math.max(0, x)) : 0; }
+  const b = document.querySelector('#pcts button.on');
+  return b ? +b.dataset.p : 100;
+}
+function getLev() { let l = Math.round(+$('lev').value || 10); l = Math.min(125, Math.max(1, l)); return l; }
+
+function closePart(frac, why) {             // frac: 포지션의 몇 분의 몇을 지금 종가에 닫을지
+  const p = S.pos; if (!p) return 0;
+  const px = lastBar().c;
+  frac = Math.min(1, Math.max(0, frac));
+  const qty = p.notional / p.entry * frac;
+  const margin = p.margin * frac;
+  const pnl = (p.side === 'long' ? 1 : -1) * qty * (px - p.entry) - qty * px * FEE;
+  S.cash += margin + pnl;
+  S.round.pnl += pnl;
+  if (frac >= 0.9999) S.pos = null;
+  else { p.notional *= 1 - frac; p.margin *= 1 - frac; }
+  if (why) flash(`${why}: ${usdS(pnl)} (종가 ${fmtP(px)})`, 3200, pnl >= 0 ? 'up' : 'down');
+  return pnl;
+}
+
+function order(side) {
+  if (!S.round || S.round.done) return;
+  const px = lastBar().c;
+  const pct = curPct() / 100;
+  if (pct <= 0) { flash('비중을 골라 주세요.'); return; }
+  const p = S.pos;
+  if (p && p.side !== side) {                // 반대 버튼 = 비중만큼 줄이기
+    closePart(pct, pct >= 0.9999 ? '청산' : `${Math.round(pct * 100)}% 줄임`);
+    S.round.acts++;
+    afterChange(); return;
+  }
+  const lev = p ? p.lev : getLev();
+  if (S.cash < 1) { flash('더 이상 주문할 수 없음 (현금 부족)'); return; }
+  const margin = pct >= 0.9999 ? S.cash / (1 + lev * FEE) : S.cash * pct;
+  const notional = margin * lev;
+  const fee = notional * FEE;
+  if (margin + fee > S.cash + 1e-9 || margin < 0.5) { flash('주문 금액이 너무 작거나 현금이 모자라요.'); return; }
+  S.cash -= margin + fee;
+  S.round.pnl -= fee;
+  if (p) {                                   // 같은 방향 = 추가매수, 평단 다시 계산
+    const q0 = p.notional / p.entry, q1 = notional / px;
+    p.notional += notional; p.margin += margin;
+    p.entry = p.notional / (q0 + q1);
+    p.adds++;
+  } else {
+    S.pos = { side, entry: px, notional, margin, lev, adds: 0 };
+    S.round.entries++;
+  }
+  S.round.acts++;
+  flash(`${side === 'long' ? '매수(롱)' : '매도(숏)'} 체결 ${usd(notional)} @ ${fmtP(px)}`, 2600, side === 'long' ? 'up' : 'down');
+  afterChange();
+}
+
+function checkLiq(a) {                       // 새 봉이 강제 청산가를 건드렸는지
+  const p = S.pos; if (!p) return;
+  const lq = liqPrice(p);
+  if ((p.side === 'long' && a.l <= lq) || (p.side === 'short' && a.h >= lq)) {
+    S.round.pnl -= p.margin;
+    S.round.liq = true;
+    S.pos = null;
+    flash(`강제 청산: 증거금 ${usd(p.margin)} 잃음 (청산가 ${fmtP(lq)})`, 4500);
+  }
+}
+
+// ---------------------------------------------------------------- 턴 · 종목
+function nextTurn() {
+  if (!S.round || S.round.done) return;
+  if (S.round.turn >= TURNS) return;
+  S.round.turn++;
+  appendBar();
+  checkLiq(lastBar());
+  if (S.round.turn >= TURNS) endRound('50턴 끝');
+  else { saveState(); render(); }
+}
+
+function endRound(why) {
+  const r = S.round;
+  if (S.pos) closePart(1, null);
+  r.done = true;
+  const a0 = full[r.firstTurn], a1 = full[turnIdx()];
+  S.n++;
+  S.history.push({ n: S.n, short: r.short, name: r.name, symbol: r.symbol, from: a0.t, to: a1.t, turns: r.turn,
+    entries: r.entries, pnl: r.pnl, startCash: r.startCash, endCash: S.cash, liq: !!r.liq, why });
+  saveState();
+  showResult();
+  chart.applyOptions({});
+  render();
+}
+
+function showResult() {
+  const h = S.history[S.history.length - 1];
+  const pct = h.pnl / h.startCash * 100;
+  $('resultBody').innerHTML = `<div class="dim">${h.why === '50턴 끝' ? '50턴 끝' : h.turns + '턴에서 넘김'} · 종목 공개</div>` +
+    `<h2>${esc(h.name)} (${h.short})</h2>` +
+    `<div class="dim num">${fmtKstReal(h.from)} ~ ${fmtKstReal(h.to)} KST · 5분봉 · ${esc(h.symbol)}</div>` +
+    `<div class="big num ${cls(h.pnl)}">${usdS(h.pnl)} (${sgn(pct)}%)</div>` +
+    `<div class="dim">진입 ${h.entries}회${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 잔고 ${usd(h.endCash)}</div>` +
+    `<button id="btnResNext">다음종목 (N)</button>`;
+  $('result').style.display = 'flex';
+  $('btnResNext').onclick = () => startRound();
+}
+
+let starting = false;
+async function startRound() {
+  if (starting) return;
+  if (S.round && !S.round.done) {
+    if (Date.now() - S.round.startedAt < LOCK_MS) return;
+    endRound(`${S.round.turn}턴에서 넘김`);
+  }
+  starting = true;
+  $('result').style.display = 'none';
+  $('btnNextCoin').disabled = true;
+  try {
+    const pick = await pickRound();
+    const c = index.coins.find((x) => x.short === pick.short);
+    const w = await buildWindow(c.periods[pick.pk], pick.start);
+    full = w.rows;
+    S.round = { ...pick, firstTurn: w.firstTurn, turn: 1, startedAt: Date.now(), startCash: S.cash, pnl: 0, entries: 0, acts: 0, done: false };
+    // 그린 것은 종목마다 새로 (앞 종목 선이 남지 않게)
+    drawings = []; saveDrawings();
+    const prev = S.history[S.history.length - 1];
+    setPrecisionFor(full[w.firstTurn].c);
+    saveState();
+    showChart(true);
+    render();
+    if (prev && prev.why !== '50턴 끝' && S.history.length) flash(`지난 종목: ${prev.name} ${prev.short} ${usdS(prev.pnl)}`, 4000, prev.pnl >= 0 ? 'up' : 'down');
+  } catch (e) {
+    flash('차트를 불러오지 못했어요: ' + e.message, 6000);
+  } finally { starting = false; updateNextBtn(); }
+}
+
+async function resumeRound() {               // 새로고침 뒤 이어하기
+  const r = S.round;
+  const c = index.coins.find((x) => x.short === r.short);
+  const w = c ? await buildWindow(c.periods[r.pk], r.start) : null;
+  if (!w) {                                   // 데이터가 바뀌어 같은 차트를 못 찾으면 그 종목은 지금 상태로 끝낸다
+    full = []; agg = []; S.round = null; S.pos = null; saveState(); return startRound();
+  }
+  full = w.rows; r.firstTurn = w.firstTurn;
+  setPrecisionFor(full[w.firstTurn].c);
+  showChart(true);
+  if (r.done) showResult();
+  render();
+}
+
+// ---------------------------------------------------------------- 화면 갱신
+function render() {
+  const eq = equity();
+  const roi = (eq / SEED - 1) * 100;
+  $('roi').textContent = sgn(roi) + '%'; $('roi').className = 'num ' + cls(roi);
+  $('eq').textContent = usd(eq);
+  $('cash').textContent = usd(S.cash);
+  const p = S.pos;
+  if (p && agg.length) {
+    const px = lastBar().c, u = upnl(px);
+    $('posTxt').innerHTML = `<span class="${p.side === 'long' ? 'up' : 'down'}">${p.side === 'long' ? '롱' : '숏'} ${p.lev}x</span> ${usd(p.notional)}`;
+    $('posMore').innerHTML = `평단 ${fmtP(p.entry)} · 증거금 ${usd(p.margin)} · 청산가 ${fmtP(liqPrice(p))}<br>` +
+      `미실현 <span class="${cls(u)}">${usdS(u)} (ROE ${sgn(u / p.margin * 100)}%)</span>${p.adds ? ` · 추가 ${p.adds}회` : ''}`;
+  } else { $('posTxt').textContent = '없음'; $('posMore').innerHTML = ''; }
+  const r = S.round;
+  if (r) {
+    const rp = r.pnl + (p ? upnl(lastBar().c) : 0);
+    $('roundPnl').innerHTML = `<span class="${cls(rp)}">${usdS(rp)}</span>`;
+    $('turnTxt').textContent = `${r.turn}/${TURNS}`;
+    $('progBar').style.width = (r.turn / TURNS * 100) + '%';
+  }
+  // 주문 가능 / 줄이기 안내
+  const pct = curPct();
+  if (p) {
+    $('availK').textContent = '주문 가능';
+    $('avail').innerHTML = `${usd(S.cash)} <span class="dim">· 반대 버튼 = 포지션 ${pct}% 줄이기</span>`;
+  } else {
+    const lev = getLev();
+    const m = pct >= 100 ? S.cash / (1 + lev * FEE) : S.cash * pct / 100;
+    $('availK').textContent = '주문 가능';
+    $('avail').innerHTML = `${usd(S.cash)} <span class="dim">· 이번 주문 ${usd(m * lev)}</span>`;
+  }
+  $('lev').disabled = !!p;
+  const playing = r && !r.done;
+  $('btnBuy').disabled = $('btnSell').disabled = !playing || (S.cash < 1 && !p);
+  $('btnHold').disabled = !playing || r.turn >= TURNS;
+  if (playing && S.cash < 1 && !p) $('msg').innerHTML = '<span class="down">더 이상 주문할 수 없음</span>';
+  updateNextBtn();
+  syncLines();
+  renderHist();
+}
+
+function updateNextBtn() {
+  const r = S.round, b = $('btnNextCoin');
+  clearTimeout(nextLockTimer);
+  if (!r || starting) { b.disabled = true; return; }
+  const left = LOCK_MS - (Date.now() - r.startedAt);
+  if (!r.done && left > 0) {
+    b.disabled = true; b.textContent = `⏳ ${Math.ceil(left / 1000)}초`;
+    nextLockTimer = setTimeout(updateNextBtn, Math.min(250, left));
+  } else { b.disabled = false; b.textContent = '⏩ 다음종목'; }
+}
+
+function syncLines() {
+  if (entryLine) { candle.removePriceLine(entryLine); entryLine = null; }
+  if (liqLine) { candle.removePriceLine(liqLine); liqLine = null; }
+  const p = S.pos; if (!p) return;
+  entryLine = candle.createPriceLine({ price: p.entry, color: p.side === 'long' ? '#26a69a' : '#ef5350', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: `${p.side === 'long' ? '롱' : '숏'} 평단` });
+  liqLine = candle.createPriceLine({ price: liqPrice(p), color: '#f0b90b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '청산가' });
+}
+
+function renderHist() {
+  const h = S.history;
+  const tot = h.reduce((s, x) => s + x.pnl, 0), wins = h.filter((x) => x.pnl > 0).length;
+  $('histSum').innerHTML = h.length ? `${h.length}종목 · 손익 <span class="${cls(tot)}">${usdS(tot)}</span> · 이긴 종목 ${wins}/${h.length}` : '';
+  if (!h.length) { $('hist').innerHTML = '<div class="empty">아직 끝난 종목이 없어요.</div>'; return; }
+  $('hist').innerHTML = '<table><tr><th>순번</th><th>종목</th><th>기간 (KST)</th><th>턴</th><th>진입</th><th>손익</th><th>수익률</th><th>끝 잔고</th></tr>' +
+    h.slice().reverse().map((x) => `<tr><td>${x.n}</td><td>${esc(x.name)} <span class="dim">${x.short}</span></td>` +
+      `<td class="num">${fmtKstReal(x.from)} ~ ${fmtKstReal(x.to).slice(11)}</td><td>${x.turns}</td><td>${x.entries}회${x.liq ? ' <span class="down">청산</span>' : ''}</td>` +
+      `<td class="num ${cls(x.pnl)}">${usdS(x.pnl)}</td><td class="num ${cls(x.pnl)}">${sgn(x.pnl / x.startCash * 100)}%</td><td class="num">${usd(x.endCash)}</td></tr>`).join('') + '</table>';
+}
+
+function afterChange() { saveState(); render(); }
+
+// ---------------------------------------------------------------- 시작 화면
+function renderHome() {
+  const eq = S.cash + (S.pos ? S.pos.margin : 0);
+  $('homeEq').textContent = usd(eq);
+  const roi = (eq / SEED - 1) * 100;
+  $('homeRoi').textContent = sgn(roi) + '%'; $('homeRoi').className = 'r num ' + cls(roi);
+  $('btnGo').textContent = S.round || S.history.length ? '게임 이어하기' : '게임 시작';
+}
+async function enterGame() {
+  if (!index) return;
+  $('home').style.display = 'none';
+  $('game').style.display = 'flex';
+  if (S.round) await resumeRound(); else await startRound();
+}
+
+// ---------------------------------------------------------------- 이벤트
+$('btnGo').onclick = enterGame;
+$('btnBuy').onclick = () => order('long');
+$('btnSell').onclick = () => order('short');
+$('btnHold').onclick = nextTurn;
+$('btnNextCoin').onclick = () => startRound();
+$('pcts').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-p]'); if (!b) return;
+  document.querySelectorAll('#pcts button').forEach((x) => x.classList.toggle('on', x === b));
+  $('pctIn').value = ''; $('pctIn').classList.remove('on'); render();
+});
+$('pctIn').addEventListener('input', () => {
+  const on = $('pctIn').value.trim() !== '';
+  $('pctIn').classList.toggle('on', on);
+  document.querySelectorAll('#pcts button').forEach((x) => x.classList.toggle('on', !on && x.dataset.p === '100'));
+  render();
+});
+$('lev').addEventListener('change', () => { $('lev').value = getLev(); S.lev = getLev(); saveState(); render(); });
+document.addEventListener('keydown', (e) => {
+  if ($('game').style.display !== 'flex') return;
+  const t = e.target.tagName;
+  if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'b') order('long');
+  else if (k === 's') order('short');
+  else if (k === 'h') nextTurn();
+  else if (k === 'n') { if (!$('btnNextCoin').disabled || (S.round && S.round.done)) startRound(); }
+  else return;
+  e.preventDefault();
+});
+document.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) b.blur(); });
+
+// ---------------------------------------------------------------- 시작
+loadState();
+$('lev').value = S.lev || 10;
+renderHome();
+(async () => {
+  try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
+  if (!index || !index.coins || !index.coins.length) {
+    $('btnGo').disabled = true;
+    $('homeNote').innerHTML = '차트게임 데이터가 없어요. 내 컴퓨터에서 <b>python3 fetch_game.py</b> 로 받은 뒤 ' +
+      '로컬 서버(<b>python3 -m http.server 8765</b>)로 열어 주세요. 공개 사이트에는 차트 데이터가 없어요.';
+    return;
+  }
+  $('hdrNote').textContent = `종목 ${index.coins.length}개` + (index.missing && index.missing.length ? ` · 빠진 구간 ${index.missing.length}곳(README 참고)` : '');
+  if (index.missing && index.missing.length) $('hdrNote').title = index.missing.join('\n');
+})();
+</script>
+<script src="draw.js"></script>
+<script>
+loadDrawings();
+</script>
+</body>
+</html>

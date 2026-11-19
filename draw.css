@@ -1,0 +1,28 @@
+/* 차트 그리기 도구 (replay.html · game.html 공통) */
+#chartRow { flex:1; display:flex; min-height:0; }
+#tools { width:46px; flex:none; background:#131722; border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:4px 0; gap:2px; overflow-y:auto; }
+#tools .tb { position:relative; width:38px; height:38px; flex:none; padding:0; border:none; background:none; color:#b2b5be; border-radius:4px; display:flex; align-items:center; justify-content:center; }
+#tools .tb:hover { background:#2a2e39; color:#fff; }
+#tools .tb.on { color:#2962ff; background:#1e2a4a; }
+#tools .tb svg, #flyout svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+#tools .tb .more { position:absolute; right:0; bottom:0; width:12px; height:12px; }
+#tools .tb .more::after { content:''; position:absolute; right:2px; bottom:2px; border-left:5px solid transparent; border-bottom:5px solid #868b98; }
+#tools .tb .more:hover::after { border-bottom-color:#fff; }
+#tools .tsep { width:28px; height:1px; background:var(--line); margin:4px 0; flex:none; }
+#flyout { position:fixed; z-index:50; background:#1e222d; border:1px solid #363c4e; border-radius:6px; padding:4px 0; box-shadow:0 6px 18px rgba(0,0,0,.55); min-width:210px; }
+#flyout .fi { display:flex; align-items:center; gap:10px; padding:4px 12px; cursor:pointer; color:#d1d4dc; white-space:nowrap; }
+#flyout .fi:hover { background:#2a2e39; } #flyout .fi.on { color:#2962ff; }
+#flyout .fi kbd { margin-left:auto; }
+#flyout.emo { display:grid; grid-template-columns:repeat(5, 38px); min-width:0; padding:6px; gap:2px; }
+#flyout.emo span { font-size:22px; text-align:center; cursor:pointer; border-radius:4px; padding:3px 0; }
+#flyout.emo span:hover, #flyout.emo span.on { background:#2a2e39; }
+#drawLayer { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:3; font-family:-apple-system, "Apple SD Gothic Neo", sans-serif; }
+#chart.drawing, #chart.drawing * { cursor:crosshair !important; }
+#chart.dhov, #chart.dhov * { cursor:pointer !important; }
+#chart.dmov, #chart.dmov * { cursor:move !important; }
+#drawBar { position:absolute; top:40px; left:50%; transform:translateX(-50%); z-index:6; display:none; gap:6px; align-items:center; background:#1e222d; border:1px solid #363c4e; border-radius:6px; padding:4px 8px; font-size:12px; white-space:nowrap; }
+#drawBar .sw { width:16px; height:16px; border-radius:50%; cursor:pointer; border:2px solid #1e222d; box-shadow:0 0 0 1px #434651; }
+#drawBar .sw.on { box-shadow:0 0 0 2px #fff; }
+#drawBar button, #drawBar select { padding:2px 7px; font-size:12px; }
+#drawInput { position:absolute; z-index:7; display:none; width:220px; font-size:14px; }
+#zoomReset { position:absolute; top:40px; left:8px; z-index:6; display:none; font-size:12px; padding:3px 9px; }
