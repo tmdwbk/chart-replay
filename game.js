@@ -124,6 +124,7 @@
     #gResult button { margin-top:16px; background:#2e7d5b; border:none; color:#fff; font-weight:700; padding:10px 28px; border-radius:10px; font-size:14px; }
 
     #side { gap:10px; }
+    @media (min-width: 901px) { #bottom { height:153px; } }   /* 아래 기록 칸: 리플레이(230px)의 2/3 */
     .gcard { background:#1e222d; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
     #gTurn.gcard { flex-direction:row; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
