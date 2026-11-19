@@ -4,6 +4,7 @@
 사용 예:
     python3 fetch_game.py            # 30종목 정해진 기간을 모두 받기(이미 받은 달은 건너뜀)
     python3 fetch_game.py ETH SOL    # 몇 종목만
+    python3 fetch_game.py --force    # 이미 받은 달도 다시 받기
 
 - 차트게임은 '거래량이 많았던 때의 주요 알트코인' 차트를 랜덤으로 보여 준다. 종목·기간은 아래 GAME_COINS 에서만 고친다.
 - 기간은 KST 달 단위(시작 달 1일 00:00 ~ 끝 달 말일 23:59 KST).
@@ -12,7 +13,7 @@
 - 공개 데이터 GET 요청만 쓴다. API 키·주문 기능은 없다.
 
 저장: data/game/<심볼>/<심볼>_5m_<UTC 연-월>.csv.gz  +  data/game/index.json (게임 화면이 읽는 목록)
-CSV 칸: ts_utc(초), open, high, low, close, volume, quote_volume
+CSV 칸: ts_utc(초), open, high, low, close, volume, quote_volume, taker_buy_volume(바이낸스만)
 """
 
 import calendar
@@ -107,7 +108,7 @@ def fetch_binance_month(sym, y, m, workdir):
     if data is None:
         return None
     rows = parse_binance_zip(data, chk.decode().split()[0].strip().lower(), workdir)
-    return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
+    return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]) for r in rows]   # 마지막 칸 = 시장가 매수 체결량
 
 
 def fetch_bybit_month(sym, y, m):
@@ -140,7 +141,7 @@ def fetch_bybit_month(sym, y, m):
             t = int(c[0]) // 1000
             oldest = t if oldest is None else min(oldest, t)
             if s <= t < e:
-                rows[t] = (t, c[1], c[2], c[3], c[4], c[5], c[6])
+                rows[t] = (t, c[1], c[2], c[3], c[4], c[5], c[6], "")   # 바이비트 캔들엔 매수 체결량이 없음
         if oldest <= s:
             break
         end_ms = oldest * 1000 - 1
@@ -155,7 +156,7 @@ def save_month(path, rows):
     tmp = path.with_name(path.name + ".tmp")
     with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
         w = csv.writer(f)
-        w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume"])
+        w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
         for row in sorted({r[0]: r for r in rows}.values()):
             w.writerow(row)
     os.replace(tmp, path)
@@ -193,7 +194,8 @@ def write_index():
 
 
 def main():
-    want = {a.upper() for a in sys.argv[1:]}
+    force = '--force' in sys.argv
+    want = {a.upper() for a in sys.argv[1:] if not a.startswith('--')}
     today = datetime.now(timezone.utc).date().replace(day=1)
     workdir = Path(tempfile.mkdtemp(prefix="chart-game-zip-"))
     try:
@@ -206,7 +208,7 @@ def main():
             log(f"[{short} {ko}] {sym} {len(months)}달")
             for y, m in months:
                 path = month_path(sym, y, m)
-                if path.exists():
+                if path.exists() and not force:
                     continue
                 if date(y, m, 1) >= today:
                     log(f"  {y}-{m:02d} 은 아직 끝나지 않은 달이라 건너뜀")
