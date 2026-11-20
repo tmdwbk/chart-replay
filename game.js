@@ -49,7 +49,8 @@
   saveOrders = function () { ordVer++; saveG(); };
   dispSym = function () { return !G || !G.round ? '' : hidden() ? '???' : G.round.symbol; };
   symOfRec = function (r) { return hidden() && r.round === G.round.id ? '???' : (r.symbol || ''); };
-  tradeHook = function (r) { r.round = G.round ? G.round.id : null; };
+  tradeHook = function (r) { r.round = G.round ? G.round.id : null; };   // 포지션 기록과 주문 기록 둘 다 여기를 지난다
+  const isTrade = (r) => r && r.t_in != null && r.t_out != null;           // 포지션 기록(청산 완료)만 true. 주문 기록은 false
   stepBack = function () { flash('차트게임에서는 뒤로 갈 수 없어요.'); };
   const turnNow = () => (G.round ? cursor - G.round.firstTurn + 1 : 0);
   const origStep = step;
@@ -177,11 +178,32 @@
     .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:15px; height:15px; padding:0 2px; border-radius:3px; font:700 10px/15px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; }
     .fbadge.b { background:rgba(38,166,154,.8); } .fbadge.s { background:rgba(239,83,80,.8); }   /* 글자 둘레 색: 불투명도 80% */
     .fbadge:hover { outline:2px solid #fff; z-index:2; }
+    .farrow { position:absolute; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:9px solid; transform:translate(-100%, -50%); filter:drop-shadow(0 0 2px rgba(0,0,0,.8)); pointer-events:none; }
+    .farrow.b { border-left-color:#26a69a; } .farrow.s { border-left-color:#ef5350; }
     #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
     #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
     .grealfee { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px; padding:6px 8px; border:1px solid #363c4e; border-radius:8px; background:#232838; }
     .grealfee input { accent-color:#f0b90b; flex:none; } .grealfee b { white-space:nowrap; } .grealfee span { font-size:11px; }
+    #gFx { position:absolute; inset:0; pointer-events:none; z-index:8; overflow:hidden; }
+    .fxPnl { position:absolute; transform:translate(-50%, -50%); text-align:center; font-variant-numeric:tabular-nums; animation:fxPop 2.1s cubic-bezier(.2,1.4,.4,1) forwards; text-shadow:0 2px 10px rgba(0,0,0,.7); white-space:nowrap; }
+    .fxPnl .l { font-size:14px; font-weight:700; color:#fff; letter-spacing:.03em; }
+    .fxPnl .v { font-size:34px; font-weight:900; line-height:1.1; }
+    .fxPnl .r { font-size:14px; font-weight:700; opacity:.9; }
+    .fxPnl.win .v, .fxPnl.win .r { color:#3ddc97; } .fxPnl.big .v, .fxPnl.big .r { color:#ffd54f; } .fxPnl.big .v { font-size:44px; }
+    .fxPnl.loss .v, .fxPnl.loss .r { color:#ff6b6b; } .fxPnl.liq .v, .fxPnl.liq .r { color:#ff3b3b; } .fxPnl.liq .v { font-size:40px; }
+    @keyframes fxPop { 0% { transform:translate(-50%, -50%) scale(.3); opacity:0; } 14% { transform:translate(-50%, -50%) scale(1.18); opacity:1; } 26% { transform:translate(-50%, -50%) scale(1); }
+      75% { transform:translate(-50%, calc(-50% - 34px)) scale(1); opacity:1; } 100% { transform:translate(-50%, calc(-50% - 60px)) scale(.95); opacity:0; } }
+    .fxBit { position:absolute; width:7px; height:11px; border-radius:2px; animation:fxBurst 1.3s cubic-bezier(.15,.8,.3,1) forwards; }
+    @keyframes fxBurst { 0% { transform:translate(-50%, -50%) rotate(0); opacity:1; } 100% { transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 90px)) rotate(var(--r)); opacity:0; } }
+    .fxRing { position:absolute; width:20px; height:20px; border:3px solid #3ddc97; border-radius:50%; transform:translate(-50%, -50%); animation:fxRing .8s ease-out forwards; }
+    @keyframes fxRing { to { width:220px; height:220px; opacity:0; border-width:1px; } }
+    .fxFlash { position:absolute; inset:0; box-shadow:inset 0 0 120px 30px rgba(239,83,80,.55); animation:fxFade .85s ease-out forwards; }
+    .fxFlash.liq { background:rgba(120,0,0,.28); box-shadow:inset 0 0 160px 50px rgba(255,40,40,.8); }
+    @keyframes fxFade { from { opacity:1; } to { opacity:0; } }
+    #chart.fxShake { animation:fxShake .45s ease-in-out; } #chart.fxShakeHard { animation:fxShakeHard .65s ease-in-out; }
+    @keyframes fxShake { 0%,100% { transform:none; } 20% { transform:translateX(-6px); } 40% { transform:translateX(6px); } 60% { transform:translateX(-4px); } 80% { transform:translateX(3px); } }
+    @keyframes fxShakeHard { 0%,100% { transform:none; } 10% { transform:translate(-12px, 4px); } 25% { transform:translate(11px, -5px); } 40% { transform:translate(-9px, 3px); } 55% { transform:translate(8px, -3px); } 70% { transform:translate(-5px, 2px); } 85% { transform:translate(3px, 0); } }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -766,7 +788,7 @@
   const baseNewPos = newPos; newPos = function (...a) { sfx('fill'); return baseNewPos(...a); };
   const baseAddFill = addFill; addFill = function (...a) { sfx('fill'); return baseAddFill(...a); };
   const basePartialAt = partialAt; partialAt = function (...a) { const x = basePartialAt(...a); sfx(x.pnl > 0 ? 'win' : 'loss'); return x; };
-  const baseTradeHook = tradeHook; tradeHook = function (tr) { baseTradeHook(tr); sfx(tr.liq ? 'liq' : tr.pnl > 0 ? 'win' : 'loss'); };
+  const baseTradeHook = tradeHook; tradeHook = function (tr) { baseTradeHook(tr); if (isTrade(tr)) sfx(tr.liq ? 'liq' : tr.pnl > 0 ? 'win' : 'loss'); };
 
   // ------------------------------------------------------------ 결과 숫자 올라가는 연출
   function countUp(el, to, fmt, ms = 900) {
@@ -928,7 +950,7 @@
   tradeHook = function (tr) {
     baseTradeHook2(tr);
     try {
-      if (!open || !open.x) return;
+      if (!isTrade(tr) || !open || !open.x) return;
       trackStops();
       const x = { ...open.x }, long = tr.side === 'long';
       let mfe = 0, mae = 0;
@@ -1069,12 +1091,22 @@
       el.onmouseenter = () => {
         fillTip.innerHTML = g.list.length > 1 ? `<div class="dim" style="margin-bottom:3px">${g.list.length}건 · 평균 ${fmtP(g.price)}</div>` + g.list.map(fillLine).join('<hr>') : fillLine(g.list[0]);
         fillTip.style.display = 'block';
+        // 실제 체결 가격 자리에 작은 화살표 (매수 초록 ▶, 매도 빨강 ▶) — 캔들 왼쪽에서 그 가격을 가리킨다
+        const bx = chart.timeScale().timeToCoordinate(g.t + KST_OFF);
+        for (const o of g.list) {
+          const py = candle.priceToCoordinate(o.fp);
+          if (bx == null || py == null) continue;
+          const a = document.createElement('div');
+          a.className = 'farrow ' + (o.dir === 'long' ? 'b' : 's');
+          a.style.left = (bx - 6) + 'px'; a.style.top = py + 'px';
+          fillLayer.appendChild(a);
+        }
         const W = $('chart').clientWidth, x = parseFloat(el.style.left), y = parseFloat(el.style.top);
         const tw = fillTip.offsetWidth, th = fillTip.offsetHeight;
         fillTip.style.left = Math.max(4, Math.min(W - tw - 80, x - tw / 2)) + 'px';
         fillTip.style.top = (y - th - 14 > 4 ? y - th - 14 : y + 16) + 'px';
       };
-      el.onmouseleave = () => { fillTip.style.display = 'none'; };
+      el.onmouseleave = () => { fillTip.style.display = 'none'; fillLayer.querySelectorAll('.farrow').forEach((a) => a.remove()); };
       g.el = el; fillLayer.appendChild(el);
     }
   }
@@ -1243,13 +1275,53 @@
   const baseTradeHookR = tradeHook;
   tradeHook = function (tr) {
     baseTradeHookR(tr);
-    if (open && (open.funding || open.real || open.extraIn)) {
+    if (isTrade(tr) && open && (open.funding || open.real || open.extraIn)) {
       tr.funding = open.funding || 0; tr.real = true;
       if (tr.funding) { tr.pnl -= tr.funding; tr.fees = (tr.fees || 0); }
       if (tr.x) { tr.x.funding = r4(tr.funding); tr.x.realFee = true; }
     }
   };
   paintReal();
+
+  // ------------------------------------------------------------ 청산 연출: 포지션이 0 → 진입 → 0 으로 끝나면 (종목 끝 자동 청산은 결과 화면이 따로 있어 제외)
+  const fx = document.createElement('div'); fx.id = 'gFx'; $('chartRow').appendChild(fx);
+  const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function closeFx(tr) {
+    const pnl = tr.pnl, roe = tr.margin ? pnl / tr.margin * 100 : 0, win = pnl > 0;
+    const kind = tr.liq ? 'liq' : !win ? 'loss' : roe >= 20 ? 'big' : 'win';
+    const label = tr.liq ? '💥 강제청산' : tr.reason === 'tp' ? '🎯 익절' : tr.reason === 'sl' ? '🛑 손절' : win ? '✅ 수익 청산' : '손실 청산';
+    // 위치: 청산한 봉·가격 근처 (화면 밖이면 가운데)
+    const W = fx.clientWidth, H = fx.clientHeight, cl = $('chart').offsetLeft, ct = $('chart').offsetTop;   // 차트 왼쪽 그리기 도구 막대만큼 밀기
+    let x = chart.timeScale().timeToCoordinate(bucket(nowT()) + KST_OFF), y = candle.priceToCoordinate(tr.exitLast ?? tr.exit);
+    x = x == null ? W / 2 : Math.max(120, Math.min(W - 200, x + cl)); y = y == null ? H / 2 : Math.max(90, Math.min(H - 120, y + ct));
+    const box = document.createElement('div');
+    box.className = 'fxPnl ' + kind;
+    box.style.left = x + 'px'; box.style.top = y + 'px';
+    box.innerHTML = `<div class="l">${label}${kind === 'big' ? ' · BIG WIN' : ''}</div><div class="v">${usdS(pnl)}</div><div class="r">ROE ${sgn(roe)}%</div>`;
+    fx.appendChild(box);
+    setTimeout(() => box.remove(), 2200);
+    if (reduceMotion) return;
+    if (win) {                               // 수익: 색종이 터짐 (크면 더 많이)
+      const n = kind === 'big' ? 46 : 22, cols = kind === 'big' ? ['#ffd54f', '#26a69a', '#5b8def', '#ff8a65', '#fff'] : ['#26a69a', '#7be0c3', '#ffd54f', '#fff'];
+      for (let i = 0; i < n; i++) {
+        const p = document.createElement('i'); p.className = 'fxBit';
+        const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * (kind === 'big' ? 180 : 110);
+        p.style.cssText = `left:${x}px; top:${y}px; background:${cols[i % cols.length]}; --dx:${Math.cos(a) * d}px; --dy:${Math.sin(a) * d - 40}px; --r:${Math.random() * 720 - 360}deg; animation-delay:${Math.random() * 80}ms`;
+        fx.appendChild(p); setTimeout(() => p.remove(), 1500);
+      }
+      const ring = document.createElement('div'); ring.className = 'fxRing'; ring.style.left = x + 'px'; ring.style.top = y + 'px';
+      fx.appendChild(ring); setTimeout(() => ring.remove(), 900);
+    } else {                                 // 손실: 붉은 번쩍임 + 흔들림 (강제청산은 더 세게)
+      const flashEl = document.createElement('div'); flashEl.className = 'fxFlash ' + kind; fx.appendChild(flashEl); setTimeout(() => flashEl.remove(), 900);
+      const c = $('chart'); c.classList.remove('fxShake', 'fxShakeHard'); void c.offsetWidth; c.classList.add(kind === 'liq' ? 'fxShakeHard' : 'fxShake');
+      setTimeout(() => c.classList.remove('fxShake', 'fxShakeHard'), 700);
+    }
+  }
+  const baseTradeHookFx = tradeHook;
+  tradeHook = function (tr) {
+    baseTradeHookFx(tr);
+    if (isTrade(tr) && tr.reason !== 'round') { try { closeFx(tr); } catch (e) { console.error(e); } }
+  };
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
