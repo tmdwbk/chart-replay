@@ -1079,8 +1079,12 @@
   function placeFills() {
     if (!fillGroups.length) return;
     const W = $('chart').clientWidth - axisW(), H = $('chart').clientHeight - 26;
+    const barAt = new Map(); for (const a of agg.slice(-400)) barAt.set(a.t, a);
     for (const g of fillGroups) {
-      const x = chart.timeScale().timeToCoordinate(g.t + KST_OFF), y = candle.priceToCoordinate(g.price);
+      // 캔들을 가리지 않게: B 는 그 봉 저가 아래, S 는 고가 위에 (체결 가격은 올리면 보임)
+      const a = barAt.get(g.t), x = chart.timeScale().timeToCoordinate(g.t + KST_OFF);
+      const edge = a ? candle.priceToCoordinate(g.dir === 'long' ? a.l : a.h) : candle.priceToCoordinate(g.price);
+      const y = edge == null ? null : edge + (g.dir === 'long' ? 11 : -11);
       if (x == null || y == null || x < 0 || x > W || y < 0 || y > H) { g.el.style.display = 'none'; continue; }
       g.el.style.display = ''; g.el.style.left = x + 'px'; g.el.style.top = y + 'px';
     }
