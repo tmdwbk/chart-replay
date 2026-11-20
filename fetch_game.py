@@ -19,12 +19,15 @@ CSV 칸: ts_utc(초), open, high, low, close, volume, quote_volume, taker_buy_vo
 import calendar
 import csv
 import gzip
+import hashlib
+import io
 import json
 import os
 import shutil
 import sys
 import tempfile
 import time
+import zipfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -151,6 +154,74 @@ def fetch_bybit_month(sym, y, m):
     return [rows[k] for k in sorted(rows)]
 
 
+# ---------------------------------------------------------------- 펀딩비 (실전 수수료 모드에서 씀)
+BYBIT_FUNDING = "https://api.bybit.com/v5/market/funding/history"
+
+
+def funding_path(sym, y, m):
+    return GAME_DIR / sym / f"{sym}_funding_{y}-{m:02d}.csv.gz"
+
+
+def fetch_binance_funding(sym, y, m):
+    """바이낸스 공개 아카이브의 그 달 펀딩비. [(정산 시각 초, 펀딩비), ...]. 메모리에서만 읽는다."""
+    url = f"{BINANCE_ROOT}/monthly/fundingRate/{sym}/{sym}-fundingRate-{y}-{m:02d}.zip"
+    chk = binance_get(url + ".CHECKSUM")
+    data = binance_get(url) if chk is not None else None
+    if data is None:
+        return None
+    if hashlib.sha256(data).hexdigest() != chk.decode().split()[0].strip().lower():
+        raise RuntimeError("펀딩비 파일 체크섬이 맞지 않습니다")
+    rows = []
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for name in zf.namelist():
+            if not name.endswith(".csv"):
+                continue
+            for line in zf.read(name).decode("utf-8").splitlines():
+                parts = line.split(",")
+                if len(parts) < 3 or not parts[0].strip().isdigit():
+                    continue                      # 머리줄
+                rows.append((round(int(parts[0]) / 1000 / 60) * 60, parts[2].strip()))   # 정산 시각(분 단위로 맞춤)
+    return rows or None
+
+
+def fetch_bybit_funding(sym, y, m):
+    s = int(datetime(y, m, 1, tzinfo=timezone.utc).timestamp()) * 1000
+    e = int((datetime(y, m, calendar.monthrange(y, m)[1], tzinfo=timezone.utc) + timedelta(days=1)).timestamp()) * 1000
+    rows, end = {}, e - 1
+    for _ in range(20):
+        try:
+            r = SESSION.get(BYBIT_FUNDING, params={"category": "linear", "symbol": sym, "startTime": s, "endTime": end, "limit": 200}, timeout=30)
+        except Exception:
+            time.sleep(2)
+            continue
+        if r.status_code != 200 or r.json().get("retCode") != 0:
+            return None
+        lst = r.json().get("result", {}).get("list") or []
+        if not lst:
+            break
+        oldest = min(int(c["fundingRateTimestamp"]) for c in lst)
+        for c in lst:
+            t = int(c["fundingRateTimestamp"])
+            if s <= t < e:
+                rows[t // 1000] = c["fundingRate"]
+        if oldest <= s or len(lst) < 200:
+            break
+        end = oldest - 1
+        time.sleep(0.2)
+    return sorted(rows.items()) or None
+
+
+def save_funding(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(tmp, "wt", newline="", compresslevel=9, encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["ts_utc", "funding_rate"])
+        for row in sorted(dict(rows).items()):
+            w.writerow(row)
+    os.replace(tmp, path)
+
+
 def save_month(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -172,6 +243,9 @@ def write_index():
         files = {}
         for p in sorted((GAME_DIR / sym).glob(f"{sym}_5m_*.csv.gz")):
             files[p.name.split("_5m_")[1][:7]] = f"game/{sym}/{p.name}"
+        funding = {}
+        for p in sorted((GAME_DIR / sym).glob(f"{sym}_funding_*.csv.gz")):
+            funding[p.name.split("_funding_")[1][:7]] = f"game/{sym}/{p.name}"
         out = []
         for a, b in periods:
             s, e = kst_period_utc(a, b)
@@ -183,6 +257,7 @@ def write_index():
             if have:
                 out.append({"from": a, "to": b, "start": s, "end": e,
                             "files": {k: files[k] for k in have},
+                            "funding": {k: funding[k] for k in have if k in funding},
                             "sources": sorted({sources.get(k, "binance") for k in have})})
         if out:
             coins.append({"short": short, "name": ko, "symbol": sym, "periods": out})
@@ -206,6 +281,14 @@ def main():
             sources = json.loads(src_path.read_text(encoding="utf-8")) if src_path.exists() else {}
             months = sorted({ym_ for a, b in periods for ym_ in utc_months(*kst_period_utc(a, b))})
             log(f"[{short} {ko}] {sym} {len(months)}달")
+            for y, m in months:                   # 펀딩비: 달마다 작은 파일 (없던 것만)
+                fp = funding_path(sym, y, m)
+                if (fp.exists() and not force) or date(y, m, 1) >= today:
+                    continue
+                fr = fetch_binance_funding(sym, y, m) or fetch_bybit_funding(sym, y, m)
+                if fr:
+                    save_funding(fp, fr)
+                    log(f"  {y}-{m:02d} 펀딩비 {len(fr)}번")
             for y, m in months:
                 path = month_path(sym, y, m)
                 if path.exists() and not force:

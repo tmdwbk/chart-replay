@@ -180,6 +180,8 @@
     #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
     #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
+    .grealfee { display:flex; gap:6px; align-items:center; font-size:12px; padding:6px 8px; border:1px solid #363c4e; border-radius:8px; background:#232838; cursor:pointer; }
+    .grealfee input { accent-color:#f0b90b; flex:none; } .grealfee b { white-space:nowrap; } .grealfee span { font-size:11px; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -1005,7 +1007,7 @@
     // 포지션 한 줄씩 CSV (엑셀·스프레드시트용)
     const cols = [['번호', (t, i) => i + 1], ['종목번호', (t) => (rmap[t.round] ? rmap[t.round].n : '')], ['코인', (t) => t.symbol], ['방향', (t) => (t.side === 'long' ? '롱' : '숏')],
       ['진입(KST)', (t) => origFmt(t.t_in)], ['청산(KST)', (t) => origFmt(t.t_out)], ['평단', (t) => t.entry], ['청산가', (t) => t.exit], ['증거금', (t) => t.margin], ['손익', (t) => r4(t.pnl)],
-      ['수수료', (t) => r4(t.fees)], ['청산방식', (t) => (t.liq ? '강제청산' : t.reason)], ['진입방식', (t) => t.x && t.x.kind], ['진입턴', (t) => t.x && t.x.entryTurn], ['보유턴', (t) => t.x && t.x.holdTurns],
+      ['수수료', (t) => r4(t.fees)], ['펀딩비', (t) => r4(t.funding || 0)], ['실전수수료', (t) => (t.real ? 1 : 0)], ['청산방식', (t) => (t.liq ? '강제청산' : t.reason)], ['진입방식', (t) => t.x && t.x.kind], ['진입턴', (t) => t.x && t.x.entryTurn], ['보유턴', (t) => t.x && t.x.holdTurns],
       ['결과%', (t) => t.x && t.x.res], ['MFE', (t) => t.x && t.x.mfe], ['MAE', (t) => t.x && t.x.mae], ['포착률', (t) => t.x && t.x.cap], ['청산뒤더간폭', (t) => t.x && t.x.post && t.x.post.fav], ['청산뒤반대폭', (t) => t.x && t.x.post && t.x.post.adv], ['청산뒤본봉수', (t) => t.x && t.x.post && t.x.post.n], ['수익손실전환', (t) => t.x && t.x.mfe != null ? (t.x.giveback ? 1 : 0) : ''], ['손절가(진입때)', (t) => t.x && t.x.slEntry], ['익절가(진입때)', (t) => t.x && t.x.tpEntry],
       ['계획손실폭', (t) => t.x && t.x.riskPct], ['R', (t) => t.x && t.x.R], ['손절옮김', (t) => t.x && t.x.slMoves], ['손절멀리', (t) => t.x && t.x.slAway], ['손절없앰', (t) => t.x && (t.x.slRemoved ? 1 : 0)],
       ['물타기', (t) => t.x && t.x.addsLosing], ['불타기', (t) => t.x && t.x.addsWinning], ['생각한초', (t) => t.x && t.x.decisionSec],
@@ -1122,6 +1124,135 @@
     positionChips();
   };
 
+  // ------------------------------------------------------------ 실전 수수료 모드 (켜고 끔, 기본 꺼짐 = 모든 체결 0.02%)
+  // 켜면: ① 바로 체결되는 주문(시장가·X·C·손절·바로 체결된 지정가·종목 끝 청산)은 테이커, 걸어 둔 지정가가 체결되면 메이커
+  //       ② 펀딩비: 정산 시각(보통 8시간마다)에 포지션을 들고 있으면 그때 펀딩비를 잔고에서 주고받음
+  //       ③ 슬리피지: 테이커 체결은 그 가격보다 조금 불리하게 체결
+  const TAKER_PCT = 0.05, SLIP_PCT = 0.02;      // 게이트 기본 등급 테이커(대략) · 시장가 체결 가격 차이
+  const realOn = () => !!(G && G.realFee);
+  const slipP = (p, buy) => p * (1 + (buy ? 1 : -1) * SLIP_PCT / 100);
+  const extraRate = () => TAKER_PCT - FEE_PCT;    // 테이커 - 메이커 (기본 계산은 메이커로 되어 있어 차액만 더함)
+  let inSubmit = false, mktPartial = false, lastSlip = null;
+  // 주문 칸 아래 스위치
+  const realBox = mk('label', 'grealfee', `<input type="checkbox" id="gRealFee"> <b>실전 수수료</b> <span class="dim">테이커 ${TAKER_PCT}% · 펀딩비 · 슬리피지 ${SLIP_PCT}%</span>`);
+  realBox.title = '켜면 바로 체결되는 주문(시장가·X·C·손절·바로 체결된 지정가·종목 끝 청산)은 테이커 수수료와 슬리피지, 걸어 둔 지정가 체결은 메이커 0.02%, 포지션을 들고 정산 시각을 지나면 펀딩비를 주고받아요.';
+  fixed.after(realBox);
+  function paintReal() {
+    $('gRealFee').checked = realOn();
+    fixed.textContent = realOn() ? `격리 · 레버리지 3배 고정 · 메이커 ${FEE_PCT}% / 테이커 ${TAKER_PCT}% · 가상 연습` : '격리 · 레버리지 3배 고정 · 수수료 지정가 0.02% · 가상 연습';
+    rule.textContent = `5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · ${realOn() ? `실전 수수료(메이커 ${FEE_PCT}%·테이커 ${TAKER_PCT}%·펀딩·슬리피지)` : '지정가 수수료 0.02%'} · 종목당 50턴`;
+  }
+  $('gRealFee').onchange = (e) => { G.realFee = e.target.checked; saveG(); paintReal(); flash(G.realFee ? '실전 수수료를 켰어요. 이제부터 체결되는 주문에 적용돼요.' : '실전 수수료를 껐어요. 모든 체결 0.02%.', 3000); e.target.blur(); };
+
+  // ① 진입: 주문을 낸 그 자리에서 체결되면(시장가·바로 체결된 지정가) 테이커 + 슬리피지
+  const baseSubmitR = submit;
+  submit = function (side) {
+    inSubmit = true; lastSlip = null;
+    try { return baseSubmitR(side); } finally {
+      inSubmit = false;
+      if (lastSlip != null) {                    // 주문 기록의 체결가도 슬리피지 반영
+        const o = [...orders].reverse().find((x) => x.status === '체결' && /진입|추가/.test(x.act || ''));
+        if (o) { o.fp = lastSlip; o.note = (o.note ? o.note + ' · ' : '') + `테이커·슬리피지 ${SLIP_PCT}%`; saveOrders(); renderMarkers(); }
+      }
+    }
+  };
+  const baseNewPosR = newPos;
+  newPos = function (ord, t) {
+    if (!(realOn() && inSubmit)) return baseNewPosR(ord, t);
+    const o2 = { ...ord, entry: slipP(ord.entry, ord.side === 'long') };
+    const pos = baseNewPosR(o2, t);
+    pos.extraIn = o2.notional * extraRate() / 100; pos.real = true; lastSlip = o2.entry;
+    return pos;
+  };
+  const baseAddFillR = addFill;
+  addFill = function (price, o, t) {
+    if (!(realOn() && inSubmit && open)) return baseAddFillR(price, o, t);
+    const p2 = slipP(price, open.side === 'long');
+    open.extraIn = (open.extraIn || 0) + o.notional * extraRate() / 100; lastSlip = p2;
+    return baseAddFillR(p2, o, t);
+  };
+  // 손익 계산에 테이커 차액을 더한다 (진입 차액 + 청산이 테이커면 청산 차액)
+  const basePosPnl = posPnl;
+  posPnl = function (pos, p) {
+    const r = basePosPnl(pos, p);
+    const exIn = pos.extraIn || 0, exOut = pos._exitRate ? pos.notional * (p / pos.entry) * pos._exitRate / 100 : 0;
+    if (exIn || exOut) { r.feeIn += exIn; r.feeOut += exOut; r.net -= exIn + exOut; }
+    return r;
+  };
+  // 청산: 익절가·지정가(Reduce-Only·추격)·강제청산은 메이커(강제청산은 증거금만큼만 잃음), 그 밖(X·C·버튼·손절·종목 끝)은 테이커 + 슬리피지
+  const baseClosePosR = closePos;
+  closePos = function (forcedPrice, reason) {
+    if (!realOn() || !open || cursor < 0 || ['tp', 'reduce', 'liq'].includes(reason)) return baseClosePosR(forcedPrice, reason);
+    const p = slipP(forcedPrice != null ? forcedPrice : curPrice(), open.side === 'short');
+    open._exitRate = extraRate();
+    try { return baseClosePosR(p, reason); } finally { if (open) delete open._exitRate; }
+  };
+  // 부분 청산: 시장가면 테이커 + 슬리피지. 줄인 비율만큼 진입 때 테이커 차액도 이때 정산
+  const basePartialClose = partialClose;
+  partialClose = function (amt) { mktPartial = realOn(); try { return basePartialClose(amt); } finally { mktPartial = false; } };
+  const basePartialAtR = partialAt;
+  partialAt = function (amt, p) {
+    if (!realOn() || !open) return basePartialAtR(amt, p);
+    const f = Math.min(1, amt / open.notional), inEx = (open.extraIn || 0) * f;
+    const x = basePartialAtR(amt, mktPartial ? slipP(p, open.side === 'short') : p);
+    const ex = inEx + (mktPartial ? x.q * x.p * extraRate() / 100 : 0);
+    if (ex) {
+      acct.balance = Math.max(0, acct.balance - ex); saveAcct();
+      open.realized -= ex; open.feesPaid = (open.feesPaid || 0) + ex; open.extraIn = (open.extraIn || 0) - inEx;
+      const last = open.partials[open.partials.length - 1]; if (last) last.pnl -= ex;
+      x.pnl -= ex; x.fees += ex;
+    }
+    return x;
+  };
+
+  // ② 펀딩비: 종목마다 그 기간의 펀딩비 파일을 읽어 두고, 봉을 넘길 때 정산 시각을 지나면 주고받는다
+  let fundList = [], fundRound = null;
+  async function loadFunding(r) {
+    fundList = []; fundRound = r.id;
+    try {
+      const c = index.coins.find((x) => x.short === r.short), per = c && c.periods[r.pk];
+      const fs = per && per.funding ? Object.values(per.funding) : [];
+      const out = [];
+      for (const f of fs) {
+        const txt = await fetchText('data/' + f);
+        for (const line of txt.split(/\r?\n/).slice(1)) { const [t, v] = line.split(','); if (t && v) out.push({ t: +t, rate: +v }); }
+      }
+      if (fundRound === r.id) fundList = out.sort((a, b) => a.t - b.t);
+    } catch (e) { console.error('펀딩비를 읽지 못했어요', e); }
+  }
+  const baseShowWindow = showWindow;
+  showWindow = function (w, r) { baseShowWindow(w, r); loadFunding(r); };
+  function applyFunding(fromClose, toClose) {   // (fromClose, toClose] 사이의 정산 시각 — 봉 종가 시각 기준
+    if (!realOn() || !open || !fundList.length) return;
+    for (const f of fundList) {
+      if (f.t <= fromClose || f.t > toClose || f.t <= open.t + 300) continue;
+      const bar = bars.find((b) => b.t + 300 >= f.t) || bars[cursor];
+      const v = (open.qty || open.notional / open.entry) * bar.c;      // 그 시각 포지션 가치
+      const cost = (open.side === 'long' ? 1 : -1) * v * f.rate;        // 양수 = 낸 돈
+      acct.balance = Math.max(0, acct.balance - cost); saveAcct();
+      open.funding = (open.funding || 0) + cost;
+      (open.fundLog = open.fundLog || []).push({ t: f.t, rate: f.rate, cost });
+      flash(`펀딩비 정산 (${fmtKst(f.t).slice(11)}) 펀딩비율 ${(f.rate * 100).toFixed(4)}% → ${cost > 0 ? '냄' : '받음'} ${usd(Math.abs(cost))}`, 4000);
+    }
+  }
+  const baseStepR = step;
+  step = function (n) {
+    const before = cursor >= 0 && bars[cursor] ? bars[cursor].t + 300 : null;
+    baseStepR(n);
+    if (before != null && cursor >= 0 && bars[cursor]) { applyFunding(before, bars[cursor].t + 300); renderPos(); }
+  };
+  // 포지션 기록에 펀딩비를 넣고, 실현 손익도 펀딩비까지 뺀 순손익으로 (잔고에는 정산 때 이미 반영)
+  const baseTradeHookR = tradeHook;
+  tradeHook = function (tr) {
+    baseTradeHookR(tr);
+    if (open && (open.funding || open.real || open.extraIn)) {
+      tr.funding = open.funding || 0; tr.real = true;
+      if (tr.funding) { tr.pnl -= tr.funding; tr.fees = (tr.fees || 0); }
+      if (tr.x) { tr.x.funding = r4(tr.funding); tr.x.realFee = true; }
+    }
+  };
+  paintReal();
+
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && closeModals()) { e.preventDefault(); return; }
@@ -1168,6 +1299,7 @@
     $('gTierList').innerHTML = TIERS.map((x, k) => `<div class="${k === i ? 'me' : ''}">${tierSvg(k, 40)}<b style="color:${x.c1}">${x.name}</b><span class="dim">${usd(Math.max(x.min, k ? x.min : SEED)).replace('.00', '')}${k ? '~' : ' 시작'}</span></div>`).join('');
   }
   renderHome();
+  paintReal();
   renderPos();
   async function enterGame() {             // 시작 화면을 닫고, 하던 종목이 있으면 다시 띄운다. 띄웠으면 true
     home.style.display = 'none';
