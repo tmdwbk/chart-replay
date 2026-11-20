@@ -235,6 +235,10 @@
         <input type="number" id="pcPx" step="any" min="0" style="width:150px" placeholder="지정가">
         <button id="btnPartialLim" title="Reduce-Only 지정가: 가격이 닿으면 이만큼만 청산">지정가로 걸기 (부분 익절)</button>
       </div>
+      <div style="display:flex; gap:6px; align-items:center">
+        <button id="btnChase" title="Chase(추격) 지정가: 지금 가격에 Reduce-Only 지정가를 걸고, 안 닿으면 봉마다 새 현재가로 옮겨 닿을 때까지 따라간다. 지정가라 메이커 수수료. 금액 칸이 비었으면 전부.">지정가 추격 청산 (Chase)</button>
+        <span class="dim" style="font-size:11px">금액이 비면 전부 · 봉마다 현재가로 옮김</span>
+      </div>
     </div>
     <h3 style="margin-top:6px">자산 <span class="dim">(가상)</span></h3>
     <div id="acct"></div>
@@ -748,10 +752,28 @@ function placeReduce(amt, px) {
 }
 function fillReduce(r) {
   setOrd(r.oid, { status: '체결', ft: nowT(), fp: r.price });
+  if (r.chase) flash(`추격 지정가 체결 ${fmtP(r.price)}${r.moves ? ` (${r.moves}번 옮김)` : ''}`, 3000);
   if (r.amt >= open.notional * 0.999) return closePos(r.price, 'reduce');
   const x = partialAt(r.amt, r.price);
   renderMarkers(); stopPlay();
   flash(`Reduce-Only 지정가 체결 ${fmtP(r.price)} · 증거금 ${usd(x.m)} (크기 ${usd(x.n)}) 청산 · 실현 ${usdS(x.pnl)} · 남은 증거금 ${usd(open.margin)}`, 4000);
+}
+// Chase(추격) 지정가: 지금 가격에 Reduce-Only 지정가를 걸고, 그 봉에서 안 닿으면 새 현재가로 옮겨 따라간다(닿을 때까지).
+function placeChase(amt) {
+  if (!open || cursor < 0) { flash('포지션이 없어 추격 지정가를 걸 수 없어요.'); return; }
+  if (!(amt > 0)) amt = open.notional;                       // 금액이 비었으면 전부
+  amt = Math.min(amt, open.notional);
+  const px = curPrice();
+  reduces.push({ id: ++reduceId, price: px, amt, t: nowT(), chase: true, moves: 0,
+    oid: logOrder({ dir: (open.side === 'long' ? 'short' : 'long'), kind: 'Chase 지정가', act: amt >= open.notional * 0.999 ? '추격 청산' : '추격 부분 청산', price: px, notional: amt, margin: n2m(amt), status: '대기', ro: true }) });
+  $('pcAmt').value = ''; renderPos();
+  flash(`추격 지정가: ${fmtP(px)} 에 ${amt >= open.notional * 0.999 ? '전부' : mn(amt)} 청산 주문. 안 닿으면 봉마다 현재가로 옮겨요.`, 4000);
+}
+function chaseTick(b) {                     // 봉 하나를 본 뒤, 아직 안 닿은 추격 주문을 그 봉 종가로 옮긴다
+  if (!open) return;
+  let moved = false;
+  for (const r of reduces) if (r.chase && r.price !== b.c) { r.price = b.c; r.moves = (r.moves || 0) + 1; moved = true; setOrd(r.oid, { price: b.c, note: `추격 ${r.moves}번 옮김` }); }
+  if (moved) renderPos();
 }
 function cancelReduce(id) { const r = reduces.find((x) => x.id === id); if (r) setOrd(r.oid, { status: '취소' }); reduces = reduces.filter((x) => x.id !== id); renderPos(); }
 // 부분 청산·Reduce-Only 금액은 화면에서 '증거금' 기준(진입 칸과 같음). 안에서는 포지션 크기로 바꿔 계산한다.
@@ -814,7 +836,7 @@ function syncLines() {
     const o = target();
     if (o && o.tp != null) linesBy.tp = add(o.tp, '#42a5f5', LightweightCharts.LineStyle.Dashed, '익절');
     if (o && o.sl != null) linesBy.sl = add(o.sl, '#ba68c8', LightweightCharts.LineStyle.Dashed, '손절');
-    if (open) for (const r of reduces) linesBy['r' + r.id] = add(r.price, '#f0b90b', LightweightCharts.LineStyle.Dashed, `부분 청산 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))}`);
+    if (open) for (const r of reduces) linesBy['r' + r.id] = add(r.price, '#f0b90b', LightweightCharts.LineStyle.Dashed, `${r.chase ? '추격 청산' : '부분 청산'} 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))}`);
   }
   if (open && entryLine && cursor >= 0) {
     const roe = posPnl(open, curPrice()).net / open.margin * 100;
@@ -854,7 +876,7 @@ function dragItems() {
   }
   if (o.tp != null) items.push({ kind: 'tp', price: o.tp, color: '#42a5f5', label: `익절 ${fmtP(o.tp)}`, x: true });
   if (o.sl != null) items.push({ kind: 'sl', price: o.sl, color: '#ba68c8', label: `손절 ${fmtP(o.sl)}`, x: true });
-  if (open) for (const r of reduces) items.push({ kind: 'r' + r.id, price: r.price, color: '#c99400', label: `부분 청산 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))} ${fmtP(r.price)}`, x: true });
+  if (open) for (const r of reduces) items.push({ kind: 'r' + r.id, price: r.price, color: '#c99400', label: `${r.chase ? '추격 청산' : '부분 청산'} 증거금 ${usd(n2m(Math.min(r.amt, open.notional)))} ${fmtP(r.price)}`, x: true });
   return items;
 }
 function renderChips() {
@@ -1038,7 +1060,7 @@ function renderPos() {
     ((open.partials || []).length ? `부분 청산 ${open.partials.length}회 · 실현 손익 <b class="${cls(open.realized)}">${usdS(open.realized)}</b><br>` : '') +
     ordTxt(open) +
     (pendEntry ? `<br><span class="dim">추가 지정가 대기 ${fmtP(pendEntry.entry)} · 증거금 ${usd(pendEntry.margin)}</span>` : '') +
-    (reduces.length ? `<br><span style="color:#f0b90b">부분 청산 지정가 ${reduces.length}개</span> <span class="dim">${reduces.map((r) => fmtP(r.price)).join(', ')}</span>` : '');
+    (reduces.length ? `<br><span style="color:#f0b90b">청산 지정가 ${reduces.length}개${reduces.some((r) => r.chase) ? ' (추격 포함)' : ''}</span> <span class="dim">${reduces.map((r) => fmtP(r.price)).join(', ')}</span>` : '');
 }
 
 function renderMarkers() {
@@ -1125,7 +1147,7 @@ function renderBottom() {
     }
     if (open) for (const r of reduces) {
       const n = Math.min(r.amt, open.notional), x = partialPreview(r.amt, r.price);
-      rows.push(`<tr><td>${symTag(sym, open.lev)}</td><td class="dim">${fmtKst(r.t)}</td><td>${sideTxt(open.side === 'long' ? 'short' : 'long')}</td><td>지정가 (부분 청산)</td><td>${fmtP(r.price)}</td>` +
+      rows.push(`<tr><td>${symTag(sym, open.lev)}</td><td class="dim">${fmtKst(r.t)}</td><td>${sideTxt(open.side === 'long' ? 'short' : 'long')}</td><td>${r.chase ? `<span style="color:#f0b90b">Chase 지정가</span><br><span class="dim">${r.moves || 0}번 옮김</span>` : '지정가 (부분 청산)'}</td><td>${fmtP(r.price)}</td>` +
         `<td>크기 ${usd(n)}<br><span class="dim">${r.amt >= open.notional * 0.999 ? '전부' : (n / open.notional * 100).toFixed(1) + '%'}</span></td><td>${usd(n2m(n))}</td>` +
         `<td class="dim">닿으면 실현 <span class="${cls(x.pnl)}">${usdS(x.pnl)}</span></td><td style="color:#f0b90b">예</td><td class="dim">${sgn((r.price / curPrice() - 1) * 100)}%</td><td><button data-c="r${r.id}">취소</button></td></tr>`);
     }
@@ -1337,6 +1359,7 @@ function checkOrders(b) {
     for (const r of hit) { if (!open) break; reduces = reduces.filter((x) => x !== r); fillReduce(r); }
   }
 }
+{ const baseCheck = checkOrders; checkOrders = function (b) { baseCheck(b); chaseTick(b); }; }   // 봉마다 추격 주문 옮기기
 // 입력 칸 값: 비었으면 null, 숫자가 아니거나 0 이하면 false
 function numOrNull(s) { s = String(s).trim(); if (!s) return null; const v = +s; return isFinite(v) && v > 0 ? v : false; }
 function setOrders() {
@@ -1434,6 +1457,7 @@ $('btnLong').onclick = () => submit('long');
 $('btnShort').onclick = () => submit('short');
 $('btnLimCancel').onclick = cancelLimit;
 $('btnPartial').onclick = () => partialClose(m2n(+$('pcAmt').value));
+$('btnChase').onclick = () => placeChase(m2n(+$('pcAmt').value));
 $('btnPartialLim').onclick = () => { placeReduce(m2n(+$('pcAmt').value), numOrNull($('pcPx').value)); };
 $('pcPx').addEventListener('keydown', (e) => { if (e.key === 'Enter') { placeReduce(m2n(+$('pcAmt').value), numOrNull($('pcPx').value)); e.target.blur(); } });
 $('roChk').onchange = (e) => {

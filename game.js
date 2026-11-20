@@ -351,6 +351,10 @@
       $('margin').value = DEF_MARGIN; pctPick = null; paintPcts();   // 새 종목마다 증거금 기본값으로
       drawings = []; saveDrawings();                     // 그린 것은 종목마다 새로
       showWindow(w, G.round);
+      // 새 종목의 현재가로 지정가 칸을 맞추고, 앞 종목 가격이 남은 칸은 비운다
+      $('entryPx').value = +curPrice().toFixed(precision);
+      for (const id of ['pcPx', 'tp', 'sl', 'pcAmt']) if ($(id)) $(id).value = '';
+      renderAcct();
       saveG();
     } catch (e) {
       console.error(e);
