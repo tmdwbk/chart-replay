@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <title>차트 리플레이 연습</title>
 <script src="lib/lightweight-charts.standalone.production.js"></script>
-<link rel="stylesheet" href="draw.css">
+<script>
+// 우리 파일(css·js)은 매번 새로 받게 주소 뒤에 숫자를 붙인다: 업데이트 뒤 브라우저가 예전 파일을 쓰지 않도록 (라이브러리는 안 바뀌니 그대로)
+window.ASSET_V = new URLSearchParams(location.search).get('v') || String(Date.now());
+document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
+</script>
 <style>
   :root { --bg:#131722; --panel:#1c2030; --line:#2a2e39; --text:#d1d4dc; --dim:#868b98; --up:#26a69a; --down:#ef5350; --accent:#2962ff; }
   * { box-sizing: border-box; }
@@ -1553,9 +1557,7 @@ document.addEventListener('keydown', (e) => {
 renderPos();
 if (!GAME_MODE) loadIndex();
 </script>
-<script src="tiers.js"></script>
-<script src="game.js"></script>
-<script src="draw.js"></script>
+<script>for (const f of ['tiers.js', 'game.js', 'draw.js']) document.write('<script src="' + f + '?v=' + ASSET_V + '"><\/script>');</script>
 <script>
 // 기록 칸 크게 보기: 첫 화면에서 차트·기록 칸이 차지할 높이(--mainH)를 재고, 버튼으로 아래·위를 오간다
 (function () {

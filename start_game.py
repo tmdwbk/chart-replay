@@ -177,21 +177,40 @@ def port_free(port):
             return False
 
 
-def already_ours(port):                            # 그 포트에서 이미 차트게임이 돌고 있나
+def served_by_this_folder(port):                   # 그 포트의 서버가 '이 폴더'의 지금 파일을 내주고 있나 (예전 폴더·예전 버전이면 False)
     try:
-        return "replay.html?game" in http_get(f"http://127.0.0.1:{port}/game.html", timeout=2).decode("utf-8", "replace")
+        got = urllib.request.urlopen(f"http://127.0.0.1:{port}/game.js", timeout=3).read()
+        return got == (HERE / "game.js").read_bytes()
+    except Exception:
+        return False
+
+
+def stale_server(port):                            # 그 포트에서 다른 차트게임(예전 버전)이 돌고 있나
+    try:
+        return "replay.html?game" in urllib.request.urlopen(f"http://127.0.0.1:{port}/game.html", timeout=3).read().decode("utf-8", "replace")
     except Exception:
         return False
 
 
 def serve(port, open_browser):
     url = f"http://127.0.0.1:{port}/game.html"
+    # 같은 주소(포트)를 써야 브라우저에 저장된 게임 기록(잔고·티어)이 이어진다. 그래서 예전 창이 켜져 있으면 닫게 한다
+    while not port_free(port) and not served_by_this_folder(port) and stale_server(port):
+        say("")
+        say("  [!] 예전 버전(또는 다른 폴더)의 차트게임 까만 창이 아직 켜져 있어요.")
+        say("      그 창이 켜져 있으면 브라우저에 예전 화면이 떠요.")
+        say("      작업 표시줄에서 까만 창(명령 프롬프트·python)을 모두 닫고, 이 창으로 돌아와 Enter 를 누르세요.")
+        try:
+            input("      (닫았으면 Enter) ")
+        except EOFError:
+            break
     if not port_free(port):
-        if already_ours(port):
+        if served_by_this_folder(port):
             say(f"  이미 다른 창에서 켜져 있어요. 브라우저만 열게요: {url}")
             if open_browser:
-                webbrowser.open(url)
+                webbrowser.open(url + "?v=" + str(int(time.time())))
             return
+        say(f"  [!] {port} 포트를 다른 프로그램이 쓰고 있어서 다른 포트로 켜요. 이 주소에서는 예전 게임 기록이 안 보일 수 있어요.")
         for p in range(port + 1, port + 20):
             if port_free(p):
                 port, url = p, f"http://127.0.0.1:{p}/game.html"
@@ -207,7 +226,7 @@ def serve(port, open_browser):
     say("  이 창을 닫으면 게임이 꺼져요. 게임하는 동안 켜 두세요.")
     say("=" * 56)
     if open_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.0, lambda: webbrowser.open(url + "?v=" + str(int(time.time())))).start()   # 새 주소로 열어 예전 화면이 남지 않게
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -227,10 +246,15 @@ def main():
         raise SystemExit("[문제] 파이썬 3.8 이상이 필요해요. python.org 에서 새로 설치해 주세요.")
     say("[1/4] 준비물 확인")
     ensure_requests()
-    updated = False
+    updated = "--fetch" in args                   # 업데이트 직후 다시 켜진 경우: 새 종목·펀딩비 데이터를 마저 받는다
     if "--no-update" not in args:
         say("[2/4] 새 버전 확인")
-        updated = check_update()
+        if check_update():
+            # 지금 돌고 있는 건 예전 코드라서, 새로 받은 start_game.py 로 다시 켠다 (같은 창에서)
+            say("  새 버전으로 다시 켤게요...")
+            rest = [a for a in args if a not in ("--no-update", "--fetch")]
+            r = subprocess.run([sys.executable, str(HERE / "start_game.py"), "--no-update", "--fetch"] + rest, cwd=str(HERE))
+            raise SystemExit(r.returncode)
     say("[3/4] 차트 데이터 확인")
     ensure_data(force_check=updated)
     say("[4/4] 게임 켜기")
