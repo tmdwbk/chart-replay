@@ -173,6 +173,13 @@
     .gst { width:100%; font-size:12px; border-collapse:collapse; } .gst th { color:var(--dim); font-weight:400; text-align:left; padding:3px 6px; } .gst td { padding:4px 6px; border-top:1px solid var(--line); }
     .gwhy div { display:grid; grid-template-columns:80px 1fr 30px; align-items:center; gap:6px; font-size:12px; margin:3px 0; }
     .gwhy i { display:block; height:8px; background:#5b8def; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
+    #fillLayer { position:absolute; inset:0; pointer-events:none; z-index:3; overflow:hidden; }
+    .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:15px; height:15px; padding:0 2px; border-radius:3px; font:700 10px/15px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; box-shadow:0 1px 3px rgba(0,0,0,.5); }
+    .fbadge.b { background:#26a69a; } .fbadge.s { background:#ef5350; }
+    .fbadge:hover { outline:2px solid #fff; z-index:2; }
+    #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
+    #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
+    .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -447,7 +454,7 @@
     cursor = w.firstTurn + r.turn - 1;
     setGamePrecision(bars[w.firstTurn].c);
     rebuild();
-    const fit = () => chart.timeScale().setVisibleLogicalRange({ from: agg.length - 120, to: agg.length + 8 });
+    const fit = () => chart.timeScale().setVisibleLogicalRange({ from: agg.length - 120, to: agg.length + RIGHT_BARS });
     fit(); requestAnimationFrame(() => requestAnimationFrame(fit));
     chart.applyOptions({});
     renderInfo(); renderPos(); renderTurn();
@@ -1015,6 +1022,101 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' })); a.download = name;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
+
+  // ------------------------------------------------------------ 체결 표시: 거래소처럼 B(매수)·S(매도) 배지, 올리면 가격·규모
+  const RIGHT_BARS = 34;                    // 마지막 봉 오른쪽 빈 칸(봉 수). 포지션·주문 표를 여기에 둬 캔들을 가리지 않게
+  chart.applyOptions({ timeScale: { rightOffset: RIGHT_BARS } });
+  const fillLayer = document.createElement('div'); fillLayer.id = 'fillLayer'; $('chart').appendChild(fillLayer);
+  const fillTip = document.createElement('div'); fillTip.id = 'fillTip'; $('chart').appendChild(fillTip);
+  let fillKey = '', fillGroups = [];
+  function axisW() {                       // 오른쪽 가격 축 폭 (차트가 아직 안 그려졌으면 화면 요소에서 재고, 그래도 없으면 70)
+    const w = chart.priceScale('right').width();
+    if (w > 0) return w;
+    const tds = $('chart').querySelectorAll('.tv-lightweight-charts table tr:first-child td');
+    return tds.length >= 2 && tds[tds.length - 1].offsetWidth ? tds[tds.length - 1].offsetWidth : 70;
+  }
+  const coinOf = () => (hidden() ? '' : ' ' + ((G.round && G.round.short) || ''));
+  function fillLine(o) {
+    const buy = o.dir === 'long', q = o.notional / o.fp;
+    const what = { 진입: '진입', 추가: '추가매수', '부분 청산': '부분 청산', 청산: '청산', '추격 청산': '추격 청산', '추격 부분 청산': '추격 부분 청산' }[o.act] || o.act || '';
+    const qty = q.toLocaleString('en-US', { maximumFractionDigits: q < 10 ? 4 : q < 1000 ? 2 : 0 });
+    return `<b class="${buy ? 'up' : 'down'}">${buy ? '매수' : '매도'}</b> ${usd(o.notional).replace('$', '')} USDT <span class="dim">(${qty}${coinOf()})</span> @ <b>${fmtP(o.fp)}</b>` +
+      `<br><span class="dim">${o.kind}${what ? ' · ' + what : ''} · 증거금 ${usd(o.margin)} · ${fmtKst(o.ft).slice(11)}${o.pnl != null ? ` · 실현 <span class="${cls(o.pnl)}">${usdS(o.pnl)}</span>` : ''}</span>`;
+  }
+  function buildFills() {
+    const r = G.round;
+    const list = r ? orders.filter((o) => o.round === r.id && o.status === '체결' && o.fp != null && o.ft != null) : [];
+    const key = (r ? r.id : '') + ':' + list.length + ':' + ordVer;
+    if (key === fillKey) return;
+    fillKey = key;
+    const groups = {};
+    for (const o of list) {
+      const k = bucket(o.ft) + ':' + o.dir;
+      (groups[k] = groups[k] || { t: bucket(o.ft), dir: o.dir, list: [] }).list.push(o);
+    }
+    fillGroups = Object.values(groups).map((g) => {
+      const n = g.list.reduce((s, o) => s + o.notional, 0);
+      g.price = g.list.reduce((s, o) => s + o.fp * o.notional, 0) / (n || 1);       // 같은 봉 여러 건이면 금액 가중 평균 가격에 하나로
+      return g;
+    });
+    fillLayer.innerHTML = '';
+    for (const g of fillGroups) {
+      const el = document.createElement('div');
+      el.className = 'fbadge ' + (g.dir === 'long' ? 'b' : 's');
+      el.textContent = (g.dir === 'long' ? 'B' : 'S') + (g.list.length > 1 ? g.list.length : '');
+      el.onmouseenter = () => {
+        fillTip.innerHTML = g.list.length > 1 ? `<div class="dim" style="margin-bottom:3px">${g.list.length}건 · 평균 ${fmtP(g.price)}</div>` + g.list.map(fillLine).join('<hr>') : fillLine(g.list[0]);
+        fillTip.style.display = 'block';
+        const W = $('chart').clientWidth, x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+        const tw = fillTip.offsetWidth, th = fillTip.offsetHeight;
+        fillTip.style.left = Math.max(4, Math.min(W - tw - 80, x - tw / 2)) + 'px';
+        fillTip.style.top = (y - th - 14 > 4 ? y - th - 14 : y + 16) + 'px';
+      };
+      el.onmouseleave = () => { fillTip.style.display = 'none'; };
+      g.el = el; fillLayer.appendChild(el);
+    }
+  }
+  function placeFills() {
+    if (!fillGroups.length) return;
+    const W = $('chart').clientWidth - axisW(), H = $('chart').clientHeight - 26;
+    for (const g of fillGroups) {
+      const x = chart.timeScale().timeToCoordinate(g.t + KST_OFF), y = candle.priceToCoordinate(g.price);
+      if (x == null || y == null || x < 0 || x > W || y < 0 || y > H) { g.el.style.display = 'none'; continue; }
+      g.el.style.display = ''; g.el.style.left = x + 'px'; g.el.style.top = y + 'px';
+    }
+  }
+  (function fillLoop() { placeFills(); requestAnimationFrame(fillLoop); })();
+  renderMarkers = function () { candle.setMarkers([]); fillKey = ''; buildFills(); placeFills(); };   // 화살표 대신 B·S 배지
+
+  // ------------------------------------------------------------ 들고 있는 포지션 표시: 캔들 위가 아니라 오른쪽 빈 칸으로
+  // 선 제목(롱 평단·익절·손절 글자)은 오른쪽 끝 최신 캔들 위에 그려져 가격을 가렸으므로 지우고, 같은 정보를 오른쪽 빈 칸의 표에 둔다
+  const baseSync = syncLines;
+  syncLines = function () {
+    baseSync();
+    for (const l of lines) if (l.options().title) l.applyOptions({ title: '' });
+  };
+  const baseChips = renderChips;
+  renderChips = function () {
+    baseChips();
+    const layer = $('ordLayer');
+    if (open && cursor >= 0) {             // 포지션 표: 롱/숏 · 증거금 · ROE (끌 수 없음)
+      const roe = posPnl(open, curPrice()).net / open.margin * 100, long = open.side === 'long';
+      const el = document.createElement('div');
+      el.className = 'ochip pinfo'; el.dataset.kind = 'pinfo'; el.dataset.price = open.entry;
+      el.innerHTML = `<span style="background:${long ? '#26a69a' : '#ef5350'}">${long ? '롱' : '숏'} ${usd(open.margin)}</span><span style="background:${roe >= 0 ? '#1b5e57' : '#6b2a2a'}">${sgn(roe)}%</span>`;
+      el.title = `평단 ${fmtP(open.entry)} · 크기 ${usd(open.notional)}`;
+      layer.insertBefore(el, layer.firstChild);
+    }
+    // 오른쪽 정렬: 가격 축 바로 왼쪽부터. 같은 줄(같은 가격)의 표는 왼쪽으로 이어 붙인다
+    const axis = axisW() + 6, rows = {};
+    for (const el of [...layer.children].reverse()) {
+      if (el.style.display === 'none') continue;
+      const k = el.dataset.price, used = rows[k] || 0;
+      el.style.left = 'auto'; el.style.right = (axis + used) + 'px';
+      rows[k] = used + el.offsetWidth + 4;
+    }
+    positionChips();
+  };
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
