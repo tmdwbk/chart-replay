@@ -159,6 +159,20 @@
     .glist > div.on { opacity:1; filter:none; border-color:#f0b90b66; }
     #gHome .go2 { width:100%; background:#2b3f6b; border:none; border-radius:16px; padding:13px 0; color:#fff; font-size:14.5px; font-weight:700; margin-top:8px; }
     #gHome .go2:hover { background:#34508a; }
+    .gmodal { position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center; background:rgba(8,10,15,.6); }
+    .gm { background:#1e222d; border:1px solid #363c4e; border-radius:14px; padding:16px 20px; max-height:90vh; overflow:auto; box-shadow:0 18px 50px rgba(0,0,0,.6); max-width:94vw; }
+    .gmh { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:15px; }
+    .gkt td { padding:5px 10px; font-size:13px; } .gkt td:first-child { white-space:nowrap; text-align:right; }
+    .gkt kbd { font-size:12px; padding:1px 6px; }
+    .gtopb { background:#262b3c; border:1px solid #363c4e; border-radius:12px; padding:3px 10px; }
+    .gscs { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+    .gsc { background:#262b3c; border-radius:8px; padding:7px 10px; font-size:11.5px; } .gsc b { font-size:16px; color:#fff; display:block; margin-top:2px; } .gsc b.up { color:var(--up); } .gsc b.down { color:var(--down); }
+    .gm h4 { margin:14px 0 6px; font-size:13px; }
+    .gchart { width:100%; height:auto; background:#161a25; border-radius:8px; }
+    .g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .gst { width:100%; font-size:12px; border-collapse:collapse; } .gst th { color:var(--dim); font-weight:400; text-align:left; padding:3px 6px; } .gst td { padding:4px 6px; border-top:1px solid var(--line); }
+    .gwhy div { display:grid; grid-template-columns:80px 1fr 30px; align-items:center; gap:6px; font-size:12px; margin:3px 0; }
+    .gwhy i { display:block; height:8px; background:#5b8def; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -311,7 +325,7 @@
   function renderTier() {
     const i = tierIndex(acct.balance), key = i + ':' + Math.round(acct.balance);
     if (G.tier == null) G.tier = i;
-    if (i !== G.tier) { tierToast(i, i > G.tier); G.tier = i; }
+    if (i !== G.tier) { tierToast(i, i > G.tier); sfx(i > G.tier ? 'tierUp' : 'tierDown'); G.tier = i; }
     G.bestTier = Math.max(G.bestTier || 0, i);
     if (tierDrawn !== key) { $('gTier').innerHTML = tierBlock(i, 46); tierDrawn = key; }
   }
@@ -364,6 +378,7 @@
     <div class="gtier" id="gHomeNext" style="margin:4px 2px 12px; text-align:left"></div>
     <button class="go" id="gGo">게임 시작</button>
     <button class="go2" id="gDaily">📅 오늘의 차트</button>
+    <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#262b3c">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#262b3c">⌨ 단축키 (?)</button></div>
     <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
       <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
     <div class="note" id="gHomeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 · 격리</div></div>`;
@@ -501,6 +516,7 @@
       `<div><button id="gResNext">다음종목 (N)</button> <button id="gResRev" style="background:#262b3c">복기 보기</button>` +
       (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2b3f6b">📅 오늘의 차트</button>` : '') + `</div>`;
     $('gResult').style.display = 'flex';
+    countUp($('gResBody').querySelector('.bigp'), h.pnl, (v) => `${usdS(v)} (${sgn(v / h.startCash * 100)}%)`);
     $('gResNext').onclick = () => startRound();
     $('gResRev').onclick = () => { $('gResult').style.display = 'none'; openTab('review'); };
     if ($('gResShare')) $('gResShare').onclick = () => copyDaily(h.daily);
@@ -628,7 +644,7 @@
       d.innerHTML = `<span class="ai">${a.ico}</span><div><div class="dim" style="font-size:11px">업적 달성</div><b>${a.name}</b><div class="dim" style="font-size:11.5px">${a.desc}</div></div>`;
       achToast.appendChild(d); setTimeout(() => d.remove(), 5000);
     }
-    if (got.length) saveG();
+    if (got.length) { saveG(); setTimeout(() => sfx('ach'), 350); }
     return got;
   }
   function renderAchTab(el) {
@@ -686,13 +702,150 @@
   }
 
   // ------------------------------------------------------------ 키
+  // ------------------------------------------------------------ 효과음 (파일 없이 브라우저에서 바로 만든 짧은 소리. M 키나 🔊 버튼으로 끄고 켬)
+  const SND_KEY = 'chart-game-sound';
+  let sndOn = localStorage.getItem(SND_KEY) !== 'off', actx = null, lastSnd = 0;
+  function tone(freq, dur, type = 'sine', vol = 0.15, delay = 0, slide = 0) {
+    const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(dur, vol = 0.25) {
+    const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+    const src = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = vol;
+    src.buffer = buf; src.connect(f).connect(g).connect(actx.destination); src.start();
+  }
+  const SOUNDS = {
+    fill: () => { tone(1800, 0.04, 'square', 0.06); tone(1200, 0.05, 'square', 0.04, 0.03); },              // 딸깍 (체결)
+    win: () => { tone(1046, 0.18, 'sine', 0.14); tone(1568, 0.35, 'sine', 0.12, 0.09); },                     // 띵 (수익 청산)
+    loss: () => { tone(160, 0.22, 'sine', 0.25, 0, 0.5); },                                                  // 쿵 (손실 청산)
+    liq: () => { noise(0.5, 0.35); tone(90, 0.5, 'sawtooth', 0.12, 0, 0.4); },                               // 펑 (강제청산)
+    tierUp: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, 'triangle', 0.12, i * 0.09)),        // 승급
+    tierDown: () => [392, 330, 262].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, i * 0.1)),
+    ach: () => { tone(1318, 0.12, 'sine', 0.1); tone(1760, 0.3, 'sine', 0.1, 0.08); },                       // 업적
+  };
+  function sfx(name) {
+    if (!sndOn || !SOUNDS[name]) return;
+    const now = performance.now(); if (now - lastSnd < 40 && name === 'fill') return; lastSnd = now;
+    try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); SOUNDS[name](); } catch (e) {}
+  }
+  function setSound(on) { sndOn = on; localStorage.setItem(SND_KEY, on ? 'on' : 'off'); $('gSnd').textContent = on ? '🔊' : '🔇'; $('gSnd').title = `효과음 ${on ? '켜짐' : '꺼짐'} (M)`; if (on) sfx('fill'); }
+  // 소리를 낼 곳: 진입·추가 체결, 청산(전부·부분), 티어, 업적
+  const baseNewPos = newPos; newPos = function (...a) { sfx('fill'); return baseNewPos(...a); };
+  const baseAddFill = addFill; addFill = function (...a) { sfx('fill'); return baseAddFill(...a); };
+  const basePartialAt = partialAt; partialAt = function (...a) { const x = basePartialAt(...a); sfx(x.pnl > 0 ? 'win' : 'loss'); return x; };
+  const baseTradeHook = tradeHook; tradeHook = function (tr) { baseTradeHook(tr); sfx(tr.liq ? 'liq' : tr.pnl > 0 ? 'win' : 'loss'); };
+
+  // ------------------------------------------------------------ 결과 숫자 올라가는 연출
+  function countUp(el, to, fmt, ms = 900) {
+    const t0 = performance.now(); let done = false;
+    const fin = () => { if (!done) { done = true; el.textContent = fmt(to); } };
+    (function f(now) { if (done) return; const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(to * e); if (k < 1) requestAnimationFrame(f); else fin(); })(t0);
+    setTimeout(fin, ms + 400);       // 화면이 가려져 있어도 마지막 값은 꼭 보이게
+  }
+
+  // ------------------------------------------------------------ 단축키 표 (? 키)
+  const KEYS = [['B', '매수 (롱)'], ['S', '매도 (숏)'], ['H 또는 →', '다음 봉 (1턴)'], ['Shift + →', '10봉'], ['Space', '재생 / 멈춤'], ['N', '다음종목 (5초 뒤)'],
+    ['X', '포지션 시장가 청산'], ['C', '전체 청산 (포지션 + 대기 주문 모두 취소)'], ['1 · 2 · 3 · 4', '증거금 비중 10 · 25 · 50 · 100%'], ['M', '효과음 켜기 / 끄기'],
+    ['T', '전적 보기'], ['?', '이 표 열기 / 닫기'], ['Esc', '입력 칸 빠져나오기 · 창 닫기'], ['Alt + 글자', '그리기 도구']];
+  const keyBox = document.createElement('div'); keyBox.id = 'gKeys'; keyBox.className = 'gmodal';
+  keyBox.innerHTML = `<div class="gm"><div class="gmh"><b>⌨ 단축키</b><button data-x>닫기 (Esc)</button></div><table class="gkt">${KEYS.map(([k, v]) => `<tr><td>${k.split(' ').map((x) => /^(또는|\+|·)$/.test(x) ? `<span class="dim">${x}</span>` : `<kbd>${x}</kbd>`).join(' ')}</td><td>${v}</td></tr>`).join('')}</table>` +
+    `<div class="dim" style="font-size:12px; margin-top:10px; line-height:1.6">한글 입력 상태여도 됩니다(키 자리로 알아봐요). 숫자를 적는 칸에 커서가 있으면 단축키 대신 글자가 들어가니, <kbd>Esc</kbd> 로 칸을 빠져나온 뒤 누르세요.</div></div>`;
+  document.body.appendChild(keyBox);
+  // ------------------------------------------------------------ 전적 (통계)
+  const statBox = document.createElement('div'); statBox.id = 'gStats'; statBox.className = 'gmodal';
+  document.body.appendChild(statBox);
+  const openModal = (m) => { document.querySelectorAll('.gmodal').forEach((x) => { if (x !== m) x.style.display = 'none'; }); m.style.display = 'flex'; };
+  const closeModals = () => { let any = false; document.querySelectorAll('.gmodal').forEach((x) => { if (x.style.display === 'flex') any = true; x.style.display = 'none'; }); return any; };
+  document.querySelectorAll('.gmodal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m || e.target.hasAttribute('data-x')) m.style.display = 'none'; }));
+  const toggleKeys = () => (keyBox.style.display === 'flex' ? keyBox.style.display = 'none' : openModal(keyBox));
+  function statsOf(list) {
+    const w = list.filter((t) => t.pnl > 0), l = list.filter((t) => t.pnl <= 0);
+    const sw = w.reduce((s, t) => s + t.pnl, 0), sl = l.reduce((s, t) => s + t.pnl, 0);
+    return { n: list.length, win: list.length ? w.length / list.length : 0, pnl: sw + sl, avgW: w.length ? sw / w.length : 0, avgL: l.length ? sl / l.length : 0,
+      pf: sl < 0 ? sw / -sl : null, rr: w.length && l.length ? (sw / w.length) / (-sl / l.length) : null, exp: list.length ? (sw + sl) / list.length : 0 };
+  }
+  function balChart(rs) {
+    const pts = [SEED].concat(rs.map((x) => x.endCash)), W = 640, H = 210, L = 64, R = 10, T = 10, B = 24;
+    if (pts.length < 2) return '<div class="empty">종목을 끝내면 잔고 그래프가 그려져요.</div>';
+    const lg = (v) => Math.log10(Math.max(v, 1));
+    let lo = Math.min(...pts), hi = Math.max(...pts);
+    const ti = tierIndex(hi); hi = Math.max(hi, TIERS[Math.min(ti + 1, TIERS.length - 1)].min * 1.25); lo = Math.min(lo, 2500);   // 다음 티어 띠까지 보이게
+    const y = (v) => T + (1 - (lg(v) - lg(lo)) / (lg(hi) - lg(lo))) * (H - T - B), x = (i) => L + i / (pts.length - 1) * (W - L - R);
+    const bands = TIERS.map((t, k) => ({ t, a: Math.max(lo, k ? t.min : lo), b: Math.min(hi, TIERS[k + 1] ? TIERS[k + 1].min : hi) })).filter((z) => z.b > z.a);
+    return `<svg viewBox="0 0 ${W} ${H}" class="gchart">` +
+      bands.map((z) => `<rect x="${L}" y="${y(z.b)}" width="${W - L - R}" height="${y(z.a) - y(z.b)}" fill="${z.t.c1}" opacity=".07"/>` +
+        `<text x="${L - 6}" y="${(y(z.a) + y(z.b)) / 2 + 4}" text-anchor="end" fill="${z.t.c1}" font-size="11">${z.t.name}</text>` +
+        (z.a > lo ? `<line x1="${L}" x2="${W - R}" y1="${y(z.a)}" y2="${y(z.a)}" stroke="${z.t.c1}" stroke-opacity=".35" stroke-dasharray="3 3"/>` : '')).join('') +
+      `<line x1="${L}" x2="${W - R}" y1="${y(SEED)}" y2="${y(SEED)}" stroke="#868b98" stroke-opacity=".5"/>` +
+      `<polyline fill="none" stroke="#5b8def" stroke-width="2" points="${pts.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>` +
+      pts.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${pts.length > 60 ? 1.5 : 3}" fill="${TIERS[tierIndex(v)].c1}"><title>${i ? `#${rs[i - 1].n} ${rs[i - 1].name}` : '시작'} · 잔고 ${usd(v)}</title></circle>`).join('') +
+      `<text x="${L}" y="${H - 6}" fill="#868b98" font-size="11">시작</text><text x="${W - R}" y="${H - 6}" fill="#868b98" font-size="11" text-anchor="end">${rs.length}종목</text></svg>`;
+  }
+  function renderStats() {
+    const tr = trades.filter((t) => !(hidden() && t.round === G.round.id)), rs = G.rounds, a = statsOf(tr);   // 진행 중인 종목은 이름이 드러나지 않게 빼고 셈
+    const pctS = (x) => (x * 100).toFixed(0) + '%';
+    let best = 0, worst = 0, cw = 0, cl = 0;
+    for (const t of tr) { if (t.pnl > 0) { cw++; cl = 0; } else { cl++; cw = 0; } best = Math.max(best, cw); worst = Math.max(worst, cl); }
+    let peak = SEED, mdd = 0;
+    for (const v of [SEED].concat(rs.map((x) => x.endCash))) { peak = Math.max(peak, v); mdd = Math.max(mdd, 1 - v / peak); }
+    const fees = tr.reduce((s, t) => s + (t.fees || 0), 0);
+    const card = (k, v, c = '') => `<div class="gsc"><div class="dim">${k}</div><b class="${c}">${v}</b></div>`;
+    const sideRow = (lab, list) => { const s = statsOf(list); return `<tr><td>${lab}</td><td>${s.n}</td><td>${s.n ? pctS(s.win) : '-'}</td><td class="${cls(s.pnl)}">${usdS(s.pnl)}</td><td class="${cls(s.exp)}">${s.n ? usdS(s.exp) : '-'}</td><td>${s.rr != null ? s.rr.toFixed(2) : '-'}</td></tr>`; };
+    const bySym = {};
+    for (const t of tr) (bySym[t.symbol] = bySym[t.symbol] || []).push(t);
+    const roundsBy = {}; for (const r of rs) roundsBy[r.symbol] = (roundsBy[r.symbol] || 0) + 1;
+    const symRows = Object.entries(bySym).map(([k, v]) => ({ k, v, s: statsOf(v) })).sort((p, q) => q.s.pnl - p.s.pnl);
+    const why = {}; for (const t of tr) { const k = t.liq ? '강제청산' : ({ tp: '익절가', sl: '손절가', reduce: '지정가 청산', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason; why[k] = (why[k] || 0) + 1; }
+    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><button data-x>닫기 (Esc)</button></div>` +
+      `<div class="gscs">${card('끝낸 종목', rs.length)}${card('이긴 종목', rs.length ? pctS(rs.filter((x) => x.pnl > 0).length / rs.length) : '-')}${card('포지션', a.n)}${card('포지션 승률', a.n ? pctS(a.win) : '-')}` +
+      `${card('평균 손익비', a.rr != null ? a.rr.toFixed(2) : '-')}${card('포지션당 기대값', a.n ? usdS(a.exp) : '-', cls(a.exp))}${card('총 실현 손익', usdS(a.pnl), cls(a.pnl))}${card('낸 수수료', usd(fees))}` +
+      `${card('최다 연승 / 연패', `${best} / ${worst}`)}${card('최대 낙폭 (종목 끝 잔고)', mdd ? '-' + (mdd * 100).toFixed(1) + '%' : '0%', mdd ? 'down' : '')}${card('플레이타임', fmtDur(G.playMs || 0))}${card('업적', `${ACH.filter((x) => (G.ach || {})[x.k]).length}/${ACH.length}`)}</div>` +
+      `<h4>잔고 · 티어 변화 <span class="dim" style="font-weight:400">(종목이 끝날 때 잔고, 세로는 로그 눈금)</span></h4>${balChart(rs)}` +
+      `<div class="g2"><div><h4>롱 · 숏</h4><table class="gst"><tr><th></th><th>횟수</th><th>승률</th><th>손익</th><th>기대값</th><th>손익비</th></tr>${sideRow('<span class="up">롱</span>', tr.filter((t) => t.side === 'long'))}${sideRow('<span class="down">숏</span>', tr.filter((t) => t.side === 'short'))}</table>` +
+      `<h4>청산 방식</h4><div class="gwhy">${Object.entries(why).sort((p, q) => q[1] - p[1]).map(([k, v]) => `<div><span>${k}</span><i style="width:${v / Math.max(1, tr.length) * 100}%"></i><b>${v}</b></div>`).join('') || '<span class="dim">아직 없음</span>'}</div></div>` +
+      `<div><h4>코인별</h4><div style="max-height:260px; overflow:auto"><table class="gst"><tr><th>종목</th><th>판</th><th>포지션</th><th>승률</th><th>손익</th></tr>${symRows.map((r) => `<tr><td>${r.k.replace(/USDT$/, '')}</td><td>${roundsBy[r.k] || 0}</td><td>${r.s.n}</td><td>${pctS(r.s.win)}</td><td class="${cls(r.s.pnl)}">${usdS(r.s.pnl)}</td></tr>`).join('') || '<tr><td colspan="5" class="dim">아직 없음</td></tr>'}</table></div></div></div>` +
+      `<div class="dim" style="font-size:11.5px; margin-top:8px">손익비 = 평균 수익 ÷ 평균 손실 · 기대값 = 포지션 하나당 평균 손익 · 진행 중인 종목의 포지션은 종목 이름이 드러나지 않게 종목이 끝난 뒤에 셉니다.</div></div>`;
+    statBox.querySelector('[data-x]').onclick = () => { statBox.style.display = 'none'; };
+  }
+  const openStats = () => { if (statBox.style.display === 'flex') { statBox.style.display = 'none'; return; } renderStats(); openModal(statBox); };
+  // 위 막대에 버튼: 전적 · 단축키 · 소리
+  for (const [id, txt, title, fn] of [['gStatBtn', '📊 전적', '전적 (T)', openStats], ['gKeyBtn', '⌨ 단축키', '단축키 표 (?)', toggleKeys], ['gSnd', '🔊', '효과음 (M)', () => setSound(!sndOn)]]) {
+    const b = document.createElement('button'); b.id = id; b.textContent = txt; b.title = title; b.className = 'gtopb';
+    b.onclick = (e) => { fn(); b.blur(); };
+    bar.insertBefore(b, $('gPlayTop'));
+  }
+  $('gPlayTop').style.marginLeft = '0';
+  $('gStatBtn').style.marginLeft = 'auto';
+  setSound(sndOn); lastSnd = 0;
+
+  // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
-    if ($('gHome').style.display !== 'none') return;
+    if (e.key === 'Escape' && closeModals()) { e.preventDefault(); return; }
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); step(1); }
-    else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); if (G.round && (G.round.done || !$('gNext').disabled)) nextCoin(); }
-  });
+    if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) { e.preventDefault(); toggleKeys(); return; }
+    if (e.code === 'KeyM') { e.preventDefault(); setSound(!sndOn); return; }
+    if (e.code === 'KeyT') { e.preventDefault(); openStats(); return; }
+    if ($('gHome').style.display !== 'none') return;
+    const c = e.code;
+    if (c === 'KeyH') { e.preventDefault(); step(1); }
+    else if (c === 'KeyN') { e.preventDefault(); if (G.round && (G.round.done || !$('gNext').disabled)) nextCoin(); }
+    else if (c === 'KeyC') { e.preventDefault(); closeAll(); }
+    else if (/^(Digit|Numpad)[1-4]$/.test(c)) { e.preventDefault(); const b = pcts.querySelector(`button[data-gp="${[10, 25, 50, 100][+c.slice(-1) - 1]}"]`); if (b) b.click(); }
+  }, true);
+  function closeAll() {                     // 전체 청산: 포지션 시장가 청산 + 대기 주문(지정가 진입·Reduce-Only·Chase) 모두 취소
+    if (!G.round || G.round.done) return;
+    const n = (pendEntry ? 1 : 0) + reduces.length;
+    if (pendEntry) { setOrd(pendEntry.oid, { status: '취소', note: '전체 청산' }); pendEntry = null; }
+    for (const x of reduces) setOrd(x.oid, { status: '취소', note: '전체 청산' });
+    reduces = [];
+    if (open) closePos(); else { renderPos(); flash(n ? `대기 주문 ${n}개를 모두 취소했어요.` : '청산할 포지션이나 대기 주문이 없어요.'); }
+  }
 
   // ------------------------------------------------------------ 시작
   loadG();
@@ -733,6 +886,8 @@
     if (await enterGame()) { if (G.round.done) showResult(); return; }
     startRound();
   };
+  $('gHomeStats').onclick = () => openStats();
+  $('gHomeKeys').onclick = () => toggleKeys();
   $('gDaily').onclick = async () => {
     if (!index) return;
     const ds = dailyState();
