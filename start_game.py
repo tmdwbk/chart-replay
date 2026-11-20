@@ -54,6 +54,14 @@ def ask_yes(question, default=True):
 
 
 def http_get(url, timeout=20):
+    # requests(+certifi) 가 있으면 그걸 쓴다: 맥 python.org 파이썬은 urllib 로 https 인증서 확인에 실패할 때가 있음
+    try:
+        import requests
+        r = requests.get(url, headers={"User-Agent": "chart-game-launcher"}, timeout=timeout)
+        r.raise_for_status()
+        return r.content
+    except ImportError:
+        pass
     req = urllib.request.Request(url, headers={"User-Agent": "chart-game-launcher"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -217,12 +225,12 @@ def main():
     say("=" * 56)
     if sys.version_info < (3, 8):
         raise SystemExit("[문제] 파이썬 3.8 이상이 필요해요. python.org 에서 새로 설치해 주세요.")
+    say("[1/4] 준비물 확인")
+    ensure_requests()
     updated = False
     if "--no-update" not in args:
-        say("[1/4] 새 버전 확인")
+        say("[2/4] 새 버전 확인")
         updated = check_update()
-    say("[2/4] 준비물 확인")
-    ensure_requests()
     say("[3/4] 차트 데이터 확인")
     ensure_data(force_check=updated)
     say("[4/4] 게임 켜기")
