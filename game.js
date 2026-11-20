@@ -179,6 +179,10 @@
   const rule = document.createElement('span'); rule.className = 'dim';
   rule.textContent = '5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 지정가 수수료 0.02% · 종목당 50턴';
   bar.appendChild(rule);
+  const playTop = document.createElement('span'); playTop.id = 'gPlayTop';          // 맨 오른쪽 위: 전체 플레이타임 n.n시간
+  playTop.title = '전체 플레이타임 (게임 화면을 보고 움직일 때만 셈)';
+  playTop.style.cssText = 'margin-left:auto; color:#fff; font-weight:700; font-variant-numeric:tabular-nums; background:#262b3c; border:1px solid #363c4e; border-radius:12px; padding:3px 12px';
+  bar.appendChild(playTop);
   $('btnStep').textContent = '▶ 다음 봉'; $('btnStep').title = 'H 또는 →';
   $('tf').value = '5'; tfSec = 300;
   $('unit').value = 'tf';
@@ -303,6 +307,7 @@
     return h ? `${h}시간 ${m % 60}분` : m ? `${m}분 ${Math.floor(ms / 1000) % 60}초` : `${Math.floor(ms / 1000)}초`;
   }
   function renderPlay() {
+    $('gPlayTop').textContent = `⏱ 플레이타임 ${((G.playMs || 0) / 3600000).toFixed(1)}시간`;
     if (!$('gPlay')) return;
     const r = G.round;
     $('gPlay').innerHTML = `${fmtDur(G.playMs || 0)}${r && !r.done ? ` <span class="dim">(이번 종목 ${fmtDur(r.playMs || 0)})</span>` : ''}`;
