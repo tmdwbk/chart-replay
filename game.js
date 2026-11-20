@@ -86,11 +86,12 @@
     const el = $('bbody'), h = G.rounds;
     if (!h.length) { el.innerHTML = '<div class="empty">아직 끝난 종목이 없어요.</div>'; return; }
     const tot = h.reduce((s, x) => s + x.pnl, 0), wins = h.filter((x) => x.pnl > 0).length;
-    el.innerHTML = `<div class="dim" style="padding:6px 12px">${h.length}종목 · 손익 <b class="${cls(tot)}">${usdS(tot)}</b> · 이긴 종목 ${wins}/${h.length}</div>` +
-      '<table><thead><tr><th>#</th><th>종목</th><th>기간 (KST)</th><th>턴</th><th>진입</th><th>손익</th><th>수익률</th><th>끝 잔고</th><th>끝난 이유</th></tr></thead><tbody>' +
+    const play = G.playMs ? ` · 플레이타임 ${fmtDur(G.playMs)}` : '';
+    el.innerHTML = `<div class="dim" style="padding:6px 12px">${h.length}종목 · 손익 <b class="${cls(tot)}">${usdS(tot)}</b> · 이긴 종목 ${wins}/${h.length}${play}</div>` +
+      '<table><thead><tr><th>#</th><th>종목</th><th>기간 (KST)</th><th>턴</th><th>진입</th><th>손익</th><th>수익률</th><th>끝 잔고</th><th>티어</th><th>플레이</th><th>끝난 이유</th></tr></thead><tbody>' +
       h.slice().reverse().map((x) => `<tr><td class="dim">${x.n}</td><td><b>${x.name}</b> <span class="dim">${x.short}</span></td>` +
         `<td class="dim">${origFmt(x.from)} ~ ${origFmt(x.to).slice(11)}</td><td>${x.turns}</td><td>${x.entries}회${x.liq ? ' <span class="down">강제청산</span>' : ''}</td>` +
-        `<td class="${cls(x.pnl)}">${usdS(x.pnl)}</td><td class="${cls(x.pnl)}">${sgn(x.pnl / x.startCash * 100)}%</td><td>${usd(x.endCash)}</td><td class="dim">${x.why || ''}</td></tr>`).join('') +
+        `<td class="${cls(x.pnl)}">${usdS(x.pnl)}</td><td class="${cls(x.pnl)}">${sgn(x.pnl / x.startCash * 100)}%</td><td>${usd(x.endCash)}</td><td style="color:${TIERS[tierIndex(x.endCash)].c1}">${TIERS[tierIndex(x.endCash)].name}</td><td class="dim">${x.playMs != null ? fmtDur(x.playMs) : '-'}</td><td class="dim">${x.why || ''}</td></tr>`).join('') +
       '</tbody></table>';
   };
   const origRenderPos = renderPos;
@@ -99,10 +100,11 @@
   // ------------------------------------------------------------ 화면 바꾸기
   const css = document.createElement('style');
   css.textContent = `
-    #gHome { position:fixed; inset:0; z-index:100; background:#131722; display:flex; align-items:center; justify-content:center; }
+    #gHome { position:fixed; inset:0; z-index:100; background:#131722; display:flex; overflow-y:auto; padding:24px 0; }
+    #gHome .card { margin:auto; }
     #gHome .card { width:390px; background:linear-gradient(180deg, #1b2a24 0%, #1a1f2b 55%); border:1px solid #2b3a33; border-radius:28px; padding:34px 26px 26px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.45); }
-    #gHome .ico { width:150px; height:150px; margin:0 auto 18px; border-radius:50%; background:radial-gradient(circle, #23493a 0%, #1b2f28 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
-    #gHome .ico svg { width:84px; height:84px; filter:drop-shadow(0 6px 12px rgba(38,166,154,.35)); }
+    #gHome .ico { width:140px; height:140px; margin:0 auto 14px; border-radius:50%; background:radial-gradient(circle, #23493a 0%, #1b2f28 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
+    #gHome .ico svg { width:118px; height:118px; filter:drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
     #gHome .kick { color:#4caf85; letter-spacing:.22em; font-weight:700; font-size:12px; }
     #gHome h1 { color:#fff; font-size:22px; margin:8px 0 10px; }
     #gHome p { color:#a3a8b5; line-height:1.6; margin:0 0 20px; font-size:13.5px; }
@@ -127,6 +129,19 @@
     :root { --botH:153px; }   /* 아래 기록 칸: 리플레이(230px)의 2/3 */
     .gcard { background:#1e222d; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
     #gTurn.gcard { flex-direction:row; }
+    .gtier { display:flex; align-items:center; gap:10px; }
+    .gtier .tn { color:#fff; font-weight:700; font-size:15px; letter-spacing:.02em; }
+    .gtier .tbar { height:5px; background:#2a2e39; border-radius:3px; overflow:hidden; margin-top:5px; }
+    .gtier .tbar i { display:block; height:100%; width:0; border-radius:3px; }
+    #gToast { position:fixed; left:50%; top:22%; transform:translateX(-50%); z-index:200; display:none; flex-direction:column; align-items:center; gap:6px;
+      background:rgba(20,24,33,.96); border:1px solid #3a4054; border-radius:18px; padding:22px 40px; box-shadow:0 18px 50px rgba(0,0,0,.6); text-align:center; }
+    #gToast .k { letter-spacing:.2em; font-size:12px; font-weight:700; } #gToast .n { color:#fff; font-size:22px; font-weight:800; }
+    #gHome .tname { color:#fff; font-size:17px; font-weight:800; margin:-8px 0 2px; } #gHome .ten { font-size:11px; letter-spacing:.25em; margin-bottom:14px; }
+    #gHome details { text-align:left; margin-top:10px; font-size:12.5px; color:#a3a8b5; }
+    #gHome details summary { cursor:pointer; color:#868b98; text-align:center; }
+    .tlist { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:8px; }
+    .tlist div { display:flex; flex-direction:column; align-items:center; background:#232838; border-radius:10px; padding:6px 2px; font-size:11.5px; }
+    .tlist div.me { outline:1px solid #5b8def; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -191,11 +206,12 @@
   const side = $('side');
   const mk = (tag, cls, html) => { const d = document.createElement(tag); if (cls) d.className = cls; if (html != null) d.innerHTML = html; return d; };
   const hideEl = (el) => el && el.classList.add('gHide');
-  const assetCard = mk('div', 'gcard', `<div class="ga-top"><div><div class="dim">수익률 <small>(시드 3,000 대비)</small></div><div id="gRoi" class="ga-roi num">+0.00%</div></div>` +
+  const assetCard = mk('div', 'gcard', `<div class="gtier" id="gTier"></div><div class="ga-line"></div><div class="ga-top"><div><div class="dim">수익률 <small>(시드 3,000 대비)</small></div><div id="gRoi" class="ga-roi num">+0.00%</div></div>` +
     `<div style="text-align:right"><div class="dim">평가자산</div><div id="gEq" class="ga-eq num">-</div></div></div><div class="ga-line"></div>` +
     `<div class="row2"><span class="dim">현금 (주문 가능)</span><span id="gCash" class="num">-</span></div>` +
     `<div class="row2"><span class="dim">보유 포지션</span><span id="gHold" class="num">없음</span></div>` +
-    `<div class="row2"><span class="dim">이번 종목 손익</span><span id="gRpnl" class="num">-</span></div>`);
+    `<div class="row2"><span class="dim">이번 종목 손익</span><span id="gRpnl" class="num">-</span></div>` +
+    `<div class="row2"><span class="dim">플레이타임</span><span id="gPlay" class="num">-</span></div>`);
   turnBox.classList.add('gcard');
   const orderCard = mk('div', 'gcard gorder');
   const acts = mk('div', 'gacts');
@@ -254,19 +270,71 @@
     $('gAvail').innerHTML = $('roChk').checked ? `줄일 증거금 ${usd(m)}${open ? ` · 지금 증거금 ${usd(open.margin)}` : ''}` :
       `주문 가능 ${usd(availBal())} · 이번 주문 증거금 ${usd(m)} → 크기 ${usd(m * LEV)}`;
     holdBtn.disabled = !r || r.done || starting;
+    renderTier(); renderPlay();
   }
+  // ------------------------------------------------------------ 티어 · 플레이타임
+  function tierBlock(i, size) {
+    const t = TIERS[i], nx = TIERS[i + 1], bal = acct.balance;
+    const pct = nx ? Math.max(0, Math.min(100, (bal - t.min) / (nx.min - t.min) * 100)) : 100;
+    return `${tierSvg(i, size)}<div style="flex:1; min-width:0"><div class="tn" style="color:${t.c1}">${t.name} <small class="dim" style="font-weight:400">${t.en}</small></div>` +
+      `<div class="dim" style="font-size:11.5px">${nx ? `${nx.name} (${usd(nx.min).replace('.00', '')})까지 ${usd(nx.min - bal)} 남음` : '최고 티어'}</div>` +
+      `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div></div>`;
+  }
+  let tierDrawn = null;
+  function renderTier() {
+    const i = tierIndex(acct.balance), key = i + ':' + Math.round(acct.balance);
+    if (G.tier == null) G.tier = i;
+    if (i !== G.tier) { tierToast(i, i > G.tier); G.tier = i; }
+    G.bestTier = Math.max(G.bestTier || 0, i);
+    if (tierDrawn !== key) { $('gTier').innerHTML = tierBlock(i, 46); tierDrawn = key; }
+  }
+  const toast = document.createElement('div'); toast.id = 'gToast'; document.body.appendChild(toast);
+  let toastTimer = null;
+  function tierToast(i, up) {
+    const t = TIERS[i];
+    toast.innerHTML = `<div class="k" style="color:${up ? t.c1 : '#ef5350'}">${up ? '티어 승급' : '티어 강등'}</div>${tierSvg(i, 110)}<div class="n" style="color:${t.c1}">${t.name}</div>` +
+      `<div class="dim">잔고 ${usd(acct.balance)}</div>`;
+    toast.style.display = 'flex';
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 3500);
+  }
+  toast.onclick = () => { toast.style.display = 'none'; };
+  function fmtDur(ms) {
+    const m = Math.floor(ms / 60000), h = Math.floor(m / 60);
+    return h ? `${h}시간 ${m % 60}분` : m ? `${m}분 ${Math.floor(ms / 1000) % 60}초` : `${Math.floor(ms / 1000)}초`;
+  }
+  function renderPlay() {
+    if (!$('gPlay')) return;
+    const r = G.round;
+    $('gPlay').innerHTML = `${fmtDur(G.playMs || 0)}${r && !r.done ? ` <span class="dim">(이번 종목 ${fmtDur(r.playMs || 0)})</span>` : ''}`;
+  }
+  // 플레이타임: 게임 화면을 보고 있고(탭이 앞에 있음), 3분 안에 키·마우스를 움직였을 때만 센다
+  const IDLE_MS = 180000;
+  let lastAct = Date.now(), lastTick = Date.now(), tickN = 0;
+  for (const ev of ['keydown', 'mousedown', 'mousemove', 'wheel', 'touchstart']) document.addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true, capture: true });
+  setInterval(() => {
+    const now = Date.now(), dt = Math.min(2000, now - lastTick); lastTick = now;
+    if (!G || document.hidden || $('gHome').style.display !== 'none' || now - lastAct > IDLE_MS) return;
+    G.playMs = (G.playMs || 0) + dt;
+    if (G.round && !G.round.done) G.round.playMs = (G.round.playMs || 0) + dt;
+    renderPlay();
+    if (++tickN % 10 === 0) saveG();
+  }, 1000);
   // 시간 축: 턴 동안은 시:분만
   chart.applyOptions({ timeScale: { tickMarkFormatter: (t) => { const s = fmtKst(t - KST_OFF); return hidden() || s.slice(11) !== '00:00' ? s.slice(11) : s.slice(5, 10); } } });
 
   // ------------------------------------------------------------ 시작 화면
   const home = document.createElement('div'); home.id = 'gHome';
   home.innerHTML = `<a class="back" href="replay.html">← 차트 리플레이</a><div class="card">
-    <div class="ico"><svg viewBox="0 0 64 64" fill="none"><path d="M6 46 L22 30 L32 38 L50 18" stroke="#3ddc97" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M40 16 H52 V28" stroke="#3ddc97" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 54 H58" stroke="#2c6b51" stroke-width="3" stroke-linecap="round"/></svg></div>
+    <div class="ico" id="gHomeIco"></div><div class="tname" id="gHomeTier"></div><div class="ten" id="gHomeTen"></div>
     <div class="kick">CHART GAME</div><h1>차트게임</h1>
     <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 5분봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 50턴, 시드 3,000 USDT로 시작해 계속 이어집니다.</p>
     <div class="row"><span class="l">평가자산</span><span class="r num" id="gHomeEq">-</span></div>
     <div class="row"><span class="l">시드 대비</span><span class="r num" id="gHomeRoi">-</span></div>
+    <div class="row"><span class="l">플레이타임</span><span class="r num" id="gHomePlay">-</span></div>
+    <div class="gtier" id="gHomeNext" style="margin:4px 2px 12px; text-align:left"></div>
     <button class="go" id="gGo">게임 시작</button>
+    <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
+      <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
     <div class="note" id="gHomeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 · 격리</div></div>`;
   document.body.appendChild(home);
 
@@ -373,7 +441,8 @@
     const mine = trades.filter((t) => t.round === r.id);
     G.n = (G.n || 0) + 1;
     G.rounds.push({ n: G.n, short: r.short, name: r.name, symbol: r.symbol, from: bars[r.firstTurn].t, to: bars[cursor].t, turns: r.turn,
-      entries: mine.length, pnl: acct.balance - r.startBal, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why });
+      entries: mine.length, pnl: acct.balance - r.startBal, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,
+      playMs: r.playMs || 0, tierFrom: tierIndex(r.startBal), tierTo: tierIndex(acct.balance) });
     saveG();
     chart.applyOptions({});
     renderInfo(); renderPos(); renderTurn(); renderMarkers();
@@ -385,7 +454,8 @@
     $('gResBody').innerHTML = `<div class="dim">${h.why} · 종목 공개</div><h2>${h.name} (${h.short})</h2>` +
       `<div class="dim num">${origFmt(h.from)} ~ ${origFmt(h.to)} KST · 5분봉 · ${h.symbol}</div>` +
       `<div class="bigp num ${cls(h.pnl)}">${usdS(h.pnl)} (${sgn(pct)}%)</div>` +
-      `<div class="dim">포지션 ${h.entries}번${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 잔고 ${usd(h.endCash)}</div>` +
+      `<div class="dim">포지션 ${h.entries}번${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 잔고 ${usd(h.endCash)} · 플레이 ${fmtDur(h.playMs || 0)}</div>` +
+      (h.tierTo != null && h.tierTo !== h.tierFrom ? `<div style="margin-top:6px; color:${TIERS[h.tierTo].c1}; font-weight:700">${h.tierTo > h.tierFrom ? '티어 승급' : '티어 강등'}: ${TIERS[h.tierFrom].name} → ${TIERS[h.tierTo].name}</div>` : '') +
       `<button id="gResNext">다음종목 (N)</button> <button id="gResLook" style="background:#262b3c">차트 보기</button>`;
     $('gResult').style.display = 'flex';
     $('gResNext').onclick = () => startRound();
@@ -428,6 +498,16 @@
     $('gHomeEq').textContent = usd(acct.balance);
     $('gHomeRoi').textContent = sgn(roi) + '%'; $('gHomeRoi').className = 'r num ' + cls(roi);
     $('gGo').textContent = G.round || G.rounds.length ? '게임 이어하기' : '게임 시작';
+    const i = tierIndex(acct.balance), t = TIERS[i];
+    $('gHomeIco').innerHTML = tierSvg(i, 118);
+    $('gHomeIco').style.background = `radial-gradient(circle, ${t.c2}66 0%, #1b2030 68%, transparent 71%)`;
+    $('gHomeTier').textContent = t.name; $('gHomeTier').style.color = t.c1;
+    $('gHomeTen').textContent = t.en + (G.bestTier > i ? ` · 최고 ${TIERS[G.bestTier].name}` : ''); $('gHomeTen').style.color = t.c1;
+    $('gHomePlay').textContent = fmtDur(G.playMs || 0);
+    const nx = TIERS[i + 1], pct = nx ? Math.max(0, Math.min(100, (acct.balance - t.min) / (nx.min - t.min) * 100)) : 100;
+    $('gHomeNext').innerHTML = `<div style="flex:1"><div class="dim" style="font-size:12px">${nx ? `다음 티어 <b style="color:${nx.c1}">${nx.name}</b>까지 ${usd(nx.min - acct.balance)}` : '최고 티어에 도착했어요'}</div>` +
+      `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div></div>`;
+    $('gTierList').innerHTML = TIERS.map((x, k) => `<div class="${k === i ? 'me' : ''}">${tierSvg(k, 40)}<b style="color:${x.c1}">${x.name}</b><span class="dim">${usd(Math.max(x.min, k ? x.min : SEED)).replace('.00', '')}${k ? '~' : ' 시작'}</span></div>`).join('');
   }
   renderHome();
   renderPos();
