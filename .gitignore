@@ -4,3 +4,4 @@ __pycache__/
 screenshot*.png
 screenshot*.jpg
 data/
+.chart-game-version

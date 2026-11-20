@@ -174,9 +174,9 @@
     .gwhy div { display:grid; grid-template-columns:80px 1fr 30px; align-items:center; gap:6px; font-size:12px; margin:3px 0; }
     .gwhy i { display:block; height:8px; background:#5b8def; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
     #fillLayer { position:absolute; inset:0; pointer-events:none; z-index:3; overflow:hidden; }
-    .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:10px; height:10px; padding:0 1px; border-radius:2px; font:700 7px/10px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; }   /* 15px 의 4/6 */
+    .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:15px; height:15px; padding:0 2px; border-radius:3px; font:700 10px/15px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; }
     .fbadge.b { background:rgba(38,166,154,.8); } .fbadge.s { background:rgba(239,83,80,.8); }   /* 글자 둘레 색: 불투명도 80% */
-    .fbadge:hover { outline:1px solid #fff; z-index:2; }
+    .fbadge:hover { outline:2px solid #fff; z-index:2; }
     #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
     #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
@@ -1084,7 +1084,7 @@
       // 캔들을 가리지 않게: B 는 그 봉 저가 아래, S 는 고가 위에 (체결 가격은 올리면 보임)
       const a = barAt.get(g.t), x = chart.timeScale().timeToCoordinate(g.t + KST_OFF);
       const edge = a ? candle.priceToCoordinate(g.dir === 'long' ? a.l : a.h) : candle.priceToCoordinate(g.price);
-      const y = edge == null ? null : edge + (g.dir === 'long' ? 8 : -8);   // 배지 반 높이(5) + 띄움(3)
+      const y = edge == null ? null : edge + (g.dir === 'long' ? 17 : -17);   // 배지 반 높이(7.5) + 띄움(약 10px)
       if (x == null || y == null || x < 0 || x > W || y < 0 || y > H) { g.el.style.display = 'none'; continue; }
       g.el.style.display = ''; g.el.style.left = x + 'px'; g.el.style.top = y + 'px';
     }
@@ -1199,7 +1199,16 @@
     try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
     if (!index || !index.coins || !index.coins.length) {
       $('gGo').disabled = true; $('gDaily').disabled = true;
-      $('gHomeNote').innerHTML = '차트게임 데이터가 없어요. 내 컴퓨터에서 <b>python3 fetch_game.py</b> 로 받은 뒤 로컬 서버(<b>python3 -m http.server 8765</b>)로 열어 주세요. 공개 사이트에는 차트 데이터가 없어요.';
+      // 왜 못 여는지 경우별로: 공개 사이트 링크 · 파일 더블클릭(file://) · 데이터를 아직 안 받음
+      const zip = 'https://github.com/tmdwbk/chart-replay/archive/refs/heads/main.zip';
+      const how = `<ol style="text-align:left; margin:8px 0 0; padding-left:18px; line-height:1.7">` +
+        `<li><a href="${zip}" style="color:#5b8def">여기서 ZIP 받기</a> → 압축 풀기 (마우스 오른쪽 → 압축 풀기)</li>` +
+        `<li>풀린 폴더에서 <b>START-CHART-GAME.bat</b> 더블클릭 (맥은 <b>start_game.command</b>)</li>` +
+        `<li>까만 창이 알아서 준비하고 브라우저로 게임을 열어요. 그 창은 켜 두세요.</li></ol>`;
+      const where = location.protocol === 'file:' ? '파일을 더블클릭해서 열면 차트 데이터를 읽을 수 없어요.'
+        : /github\.io$/.test(location.hostname) ? '이 공개 링크에는 차트 데이터가 없어서(데이터 재배포 금지) 게임을 할 수 없어요. 내 컴퓨터에서 켜야 해요.'
+        : '차트 데이터가 아직 없어요. 까만 창(START-CHART-GAME.bat)으로 켜면 처음 한 번 알아서 받아요.';
+      $('gHomeNote').innerHTML = `<b style="color:#f0b90b">${where}</b>${how}`;
     }
   })();
 })();

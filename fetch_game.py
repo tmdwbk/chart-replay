@@ -154,7 +154,7 @@ def fetch_bybit_month(sym, y, m):
 def save_month(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
+    with gzip.open(tmp, "wt", newline="", compresslevel=9, encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
         for row in sorted({r[0]: r for r in rows}.values()):
@@ -168,7 +168,7 @@ def write_index():
     missing = []
     for short, ko, sym, periods in GAME_COINS:
         src_path = GAME_DIR / sym / "sources.json"
-        sources = json.loads(src_path.read_text()) if src_path.exists() else {}
+        sources = json.loads(src_path.read_text(encoding="utf-8")) if src_path.exists() else {}
         files = {}
         for p in sorted((GAME_DIR / sym).glob(f"{sym}_5m_*.csv.gz")):
             files[p.name.split("_5m_")[1][:7]] = f"game/{sym}/{p.name}"
@@ -188,7 +188,7 @@ def write_index():
             coins.append({"short": short, "name": ko, "symbol": sym, "periods": out})
     GAME_DIR.mkdir(parents=True, exist_ok=True)
     tmp = GAME_DIR / ".index.json.tmp"
-    tmp.write_text(json.dumps({"interval": "5m", "coins": coins, "missing": missing}, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps({"interval": "5m", "coins": coins, "missing": missing}, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, GAME_DIR / "index.json")
     return coins, missing
 
@@ -203,7 +203,7 @@ def main():
             if want and short not in want and sym not in want:
                 continue
             src_path = GAME_DIR / sym / "sources.json"
-            sources = json.loads(src_path.read_text()) if src_path.exists() else {}
+            sources = json.loads(src_path.read_text(encoding="utf-8")) if src_path.exists() else {}
             months = sorted({ym_ for a, b in periods for ym_ in utc_months(*kst_period_utc(a, b))})
             log(f"[{short} {ko}] {sym} {len(months)}달")
             for y, m in months:
@@ -224,7 +224,7 @@ def main():
                 save_month(path, rows)
                 sources[f"{y}-{m:02d}"] = src
                 src_path.parent.mkdir(parents=True, exist_ok=True)
-                src_path.write_text(json.dumps(sources, indent=1))
+                src_path.write_text(json.dumps(sources, indent=1), encoding="utf-8")
                 log(f"  {y}-{m:02d} {len(rows):,}개 ({'바이낸스 선물' if src == 'binance' else '바이비트 선물'})")
                 time.sleep(0.2)
     finally:

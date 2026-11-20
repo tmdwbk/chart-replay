@@ -268,7 +268,7 @@ def fetch_upbit(market, start_utc, end_utc):
 def _write_json(path, obj):
     """다른 종목을 동시에 받아도 깨지지 않게 임시 파일에 쓰고 바꿔치기."""
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -277,7 +277,7 @@ def rebuild_index():
     entries = []
     for sub in sorted(DATA_DIR.glob("*/index.json")):
         try:
-            entries.extend(json.loads(sub.read_text()))
+            entries.extend(json.loads(sub.read_text(encoding="utf-8")))
         except ValueError:
             pass
     entries.sort(key=lambda x: (x["symbol"], x["start"]))
@@ -285,7 +285,7 @@ def rebuild_index():
     secs = []
     for sub in sorted(DATA_DIR.glob("*/sec/index.json")):
         try:
-            secs.extend(json.loads(sub.read_text()))
+            secs.extend(json.loads(sub.read_text(encoding="utf-8")))
         except ValueError:
             pass
     secs.sort(key=lambda x: (x["symbol"], x["day"]))
@@ -352,14 +352,14 @@ def save_seconds(symbol, kst_day, rows):
     path = DATA_DIR / symbol / "sec" / f"{symbol}_1s_{kst_day:%Y%m%d}.csv.gz"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
+    with gzip.open(tmp, "wt", newline="", compresslevel=9, encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
         for sec, (o, h, l, c, v, qv, bv) in rows:
             w.writerow([sec, o, repr(h), repr(l), c, f"{v:.12g}", f"{qv:.4f}", f"{bv:.12g}"])
     os.replace(tmp, path)
     sub = path.parent / "index.json"
-    idx = json.loads(sub.read_text()) if sub.exists() else []
+    idx = json.loads(sub.read_text(encoding="utf-8")) if sub.exists() else []
     rel = f"{symbol}/sec/{path.name}"
     idx = [x for x in idx if x["file"] != rel]
     idx.append({"file": rel, "symbol": symbol, "day": kst_day.isoformat(), "rows": len(rows)})
@@ -412,7 +412,7 @@ def save(rows, symbol, source, market_label, quote, start_d, end_d):
     path = chunk_path(symbol, source, start_d, end_d)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    with gzip.open(tmp, "wt", newline="", compresslevel=9) as f:
+    with gzip.open(tmp, "wt", newline="", compresslevel=9, encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["time_kst", "ts_utc", "open", "high", "low", "close", "volume", "quote_volume", "taker_buy_volume"])
         for t, o, h, l, c, v, qv, bv in rows:
@@ -420,7 +420,7 @@ def save(rows, symbol, source, market_label, quote, start_d, end_d):
     os.replace(tmp, path)
 
     sub_index = path.parent / "index.json"
-    index = json.loads(sub_index.read_text()) if sub_index.exists() else []
+    index = json.loads(sub_index.read_text(encoding="utf-8")) if sub_index.exists() else []
     rel = f"{symbol}/{path.name}"
     # 같은 달을 다시 받았으면(예: 이번 달 갱신) 예전 조각을 바꾼다
     index = [x for x in index if x["file"] != rel and not (x["start"] <= end_d.isoformat() and x["end"] >= start_d.isoformat())]
