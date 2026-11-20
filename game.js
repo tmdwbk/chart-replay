@@ -1,6 +1,6 @@
 // 차트게임 모드 (replay.html?game). 리플레이 화면의 주문·포지션·기록 기능을 그대로 쓰고, 그 위에 게임 규칙만 얹는다.
 // - 거래량이 많았던 때의 주요 알트코인 30개 5분봉에서 랜덤으로 한 구간 (data/game/, fetch_game.py 로 받음)
-// - 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 고정 · 격리 고정 · 수수료 지정가(메이커) 0.02%
+// - 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 고정 · 격리 고정 · 실전 수수료 항상(메이커 0.02%/테이커 0.05%·펀딩·슬리피지)
 // - 종목 하나에 50턴(1턴 = 시작 화면, 다음 봉 하나 = 1턴), 새 종목은 5초 뒤에 넘길 수 있음
 // - 턴 동안 종목 이름·날짜는 가리고, 종목이 끝나면 공개
 // 가상 연습용. 실제 주문·API 키 없음.
@@ -180,7 +180,7 @@
     #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
     #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
-    .grealfee { display:flex; gap:6px; align-items:center; font-size:12px; padding:6px 8px; border:1px solid #363c4e; border-radius:8px; background:#232838; cursor:pointer; }
+    .grealfee { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px; padding:6px 8px; border:1px solid #363c4e; border-radius:8px; background:#232838; }
     .grealfee input { accent-color:#f0b90b; flex:none; } .grealfee b { white-space:nowrap; } .grealfee span { font-size:11px; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
@@ -1124,25 +1124,23 @@
     positionChips();
   };
 
-  // ------------------------------------------------------------ 실전 수수료 모드 (켜고 끔, 기본 꺼짐 = 모든 체결 0.02%)
+  // ------------------------------------------------------------ 실전 수수료 (항상 켜짐 — 2026-11-20 승주 결정)
   // 켜면: ① 바로 체결되는 주문(시장가·X·C·손절·바로 체결된 지정가·종목 끝 청산)은 테이커, 걸어 둔 지정가가 체결되면 메이커
   //       ② 펀딩비: 정산 시각(보통 8시간마다)에 포지션을 들고 있으면 그때 펀딩비를 잔고에서 주고받음
   //       ③ 슬리피지: 테이커 체결은 그 가격보다 조금 불리하게 체결
   const TAKER_PCT = 0.05, SLIP_PCT = 0.02;      // 게이트 기본 등급 테이커(대략) · 시장가 체결 가격 차이
-  const realOn = () => !!(G && G.realFee);
+  const realOn = () => true;                      // 끌 수 없음
   const slipP = (p, buy) => p * (1 + (buy ? 1 : -1) * SLIP_PCT / 100);
   const extraRate = () => TAKER_PCT - FEE_PCT;    // 테이커 - 메이커 (기본 계산은 메이커로 되어 있어 차액만 더함)
   let inSubmit = false, mktPartial = false, lastSlip = null;
-  // 주문 칸 아래 스위치
-  const realBox = mk('label', 'grealfee', `<input type="checkbox" id="gRealFee"> <b>실전 수수료</b> <span class="dim">테이커 ${TAKER_PCT}% · 펀딩비 · 슬리피지 ${SLIP_PCT}%</span>`);
-  realBox.title = '켜면 바로 체결되는 주문(시장가·X·C·손절·바로 체결된 지정가·종목 끝 청산)은 테이커 수수료와 슬리피지, 걸어 둔 지정가 체결은 메이커 0.02%, 포지션을 들고 정산 시각을 지나면 펀딩비를 주고받아요.';
+  // 주문 칸 아래 안내 (스위치 없음)
+  const realBox = mk('div', 'grealfee', `<b>실전 수수료</b> <span class="dim">메이커 ${FEE_PCT}% · 테이커 ${TAKER_PCT}% · 펀딩비 · 슬리피지 ${SLIP_PCT}%</span>`);
+  realBox.title = '바로 체결되는 주문(시장가·X·C·손절·바로 체결된 지정가·종목 끝 청산)은 테이커 수수료와 슬리피지, 걸어 둔 지정가 체결은 메이커, 포지션을 들고 정산 시각을 지나면 펀딩비를 주고받아요.';
   fixed.after(realBox);
   function paintReal() {
-    $('gRealFee').checked = realOn();
-    fixed.textContent = realOn() ? `격리 · 레버리지 3배 고정 · 메이커 ${FEE_PCT}% / 테이커 ${TAKER_PCT}% · 가상 연습` : '격리 · 레버리지 3배 고정 · 수수료 지정가 0.02% · 가상 연습';
-    rule.textContent = `5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · ${realOn() ? `실전 수수료(메이커 ${FEE_PCT}%·테이커 ${TAKER_PCT}%·펀딩·슬리피지)` : '지정가 수수료 0.02%'} · 종목당 50턴`;
+    fixed.textContent = '격리 · 레버리지 3배 고정 · 가상 연습';
+    rule.textContent = `5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 메이커 ${FEE_PCT}%·테이커 ${TAKER_PCT}%·펀딩·슬리피지 · 종목당 50턴`;
   }
-  $('gRealFee').onchange = (e) => { G.realFee = e.target.checked; saveG(); paintReal(); flash(G.realFee ? '실전 수수료를 켰어요. 이제부터 체결되는 주문에 적용돼요.' : '실전 수수료를 껐어요. 모든 체결 0.02%.', 3000); e.target.blur(); };
 
   // ① 진입: 주문을 낸 그 자리에서 체결되면(시장가·바로 체결된 지정가) 테이커 + 슬리피지
   const baseSubmitR = submit;
