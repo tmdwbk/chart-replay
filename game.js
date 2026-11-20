@@ -357,6 +357,7 @@
     const now = Date.now(), dt = Math.min(2000, now - lastTick); lastTick = now;
     if (!G || document.hidden || $('gHome').style.display !== 'none' || now - lastAct > IDLE_MS) return;
     G.playMs = (G.playMs || 0) + dt;
+    if (G.sess) G.sess.last = now;
     if (G.round && !G.round.done) G.round.playMs = (G.round.playMs || 0) + dt;
     renderPlay();
     if (++tickN % 10 === 0) saveG();
@@ -463,6 +464,7 @@
       G.n = (G.n || 0);
       G.round = { ...pick, id: Date.now(), turn: 1, startedAt: Date.now(), startBal: acct.balance, done: false, daily };
       if (daily) { G.daily = G.daily || {}; G.daily[daily] = { started: Date.now() }; }
+      onRoundStart(G.round);
       open = null; pendEntry = null; reduces = [];
       $('margin').value = DEF_MARGIN; pctPick = null; paintPcts();   // 새 종목마다 증거금 기본값으로
       drawings = []; saveDrawings();                     // 그린 것은 종목마다 새로
@@ -493,6 +495,7 @@
       playMs: r.playMs || 0, tierFrom: tierIndex(r.startBal), tierTo: tierIndex(acct.balance), rid: r.id, daily: r.daily || null });
     const h = G.rounds[G.rounds.length - 1];
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
+    try { roundExtra(r, h); } catch (e) { console.error(e); }
     if (r.daily) G.daily[r.daily] = { done: true, pct: pctOf(h) * 100, entries: mine.length, cap: h.review ? h.review.avgCap : null,
       emoji: mine.map((t) => (t.liq ? '💥' : t.pnl > 0 ? '🟩' : '🟥')).join('').slice(0, 40), short: r.short };
     renderTier();
@@ -801,7 +804,7 @@
     const roundsBy = {}; for (const r of rs) roundsBy[r.symbol] = (roundsBy[r.symbol] || 0) + 1;
     const symRows = Object.entries(bySym).map(([k, v]) => ({ k, v, s: statsOf(v) })).sort((p, q) => q.s.pnl - p.s.pnl);
     const why = {}; for (const t of tr) { const k = t.liq ? '강제청산' : ({ tp: '익절가', sl: '손절가', reduce: '지정가 청산', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason; why[k] = (why[k] || 0) + 1; }
-    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><button data-x>닫기 (Esc)</button></div>` +
+    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><span><button id="gExport" title="실력 분석용: JSON(전부) + CSV(포지션 한 줄씩)">⬇ 분석용 내보내기</button> <button data-x>닫기 (Esc)</button></span></div>` +
       `<div class="gscs">${card('끝낸 종목', rs.length)}${card('이긴 종목', rs.length ? pctS(rs.filter((x) => x.pnl > 0).length / rs.length) : '-')}${card('포지션', a.n)}${card('포지션 승률', a.n ? pctS(a.win) : '-')}` +
       `${card('평균 손익비', a.rr != null ? a.rr.toFixed(2) : '-')}${card('포지션당 기대값', a.n ? usdS(a.exp) : '-', cls(a.exp))}${card('총 실현 손익', usdS(a.pnl), cls(a.pnl))}${card('낸 수수료', usd(fees))}` +
       `${card('최다 연승 / 연패', `${best} / ${worst}`)}${card('최대 낙폭 (종목 끝 잔고)', mdd ? '-' + (mdd * 100).toFixed(1) + '%' : '0%', mdd ? 'down' : '')}${card('플레이타임', fmtDur(G.playMs || 0))}${card('업적', `${ACH.filter((x) => (G.ach || {})[x.k]).length}/${ACH.length}`)}</div>` +
@@ -811,6 +814,7 @@
       `<div><h4>코인별</h4><div style="max-height:260px; overflow:auto"><table class="gst"><tr><th>종목</th><th>판</th><th>포지션</th><th>승률</th><th>손익</th></tr>${symRows.map((r) => `<tr><td>${r.k.replace(/USDT$/, '')}</td><td>${roundsBy[r.k] || 0}</td><td>${r.s.n}</td><td>${pctS(r.s.win)}</td><td class="${cls(r.s.pnl)}">${usdS(r.s.pnl)}</td></tr>`).join('') || '<tr><td colspan="5" class="dim">아직 없음</td></tr>'}</table></div></div></div>` +
       `<div class="dim" style="font-size:11.5px; margin-top:8px">손익비 = 평균 수익 ÷ 평균 손실 · 기대값 = 포지션 하나당 평균 손익 · 진행 중인 종목의 포지션은 종목 이름이 드러나지 않게 종목이 끝난 뒤에 셉니다.</div></div>`;
     statBox.querySelector('[data-x]').onclick = () => { statBox.style.display = 'none'; };
+    $('gExport').onclick = () => exportData();
   }
   const openStats = () => { if (statBox.style.display === 'flex') { statBox.style.display = 'none'; return; } renderStats(); openModal(statBox); };
   // 위 막대에 버튼: 전적 · 단축키 · 소리
@@ -822,6 +826,167 @@
   $('gPlayTop').style.marginLeft = '0';
   $('gStatBtn').style.marginLeft = 'auto';
   setSound(sndOn); lastSnd = 0;
+
+  // ------------------------------------------------------------ 실력 측정용 기록 (플레이 방식은 그대로, 기록만 늘림)
+  // 포지션마다 tr.x 에: 진입 순간 차트 상태 · 손절/익절 계획과 옮김 · MFE/MAE · R 배수 · 생각한 시간 · 직전 매매 뒤 행동 · 세션
+  // 종목마다: 턴별 생각한 시간 · 첫 진입 턴 · 세션 · 시작 때 연승/연패 · 시각
+  const LOG_VER = 1;
+  let lastRevealAt = Date.now(), pendingDecision = null;
+  const r4 = (x) => (x == null || !isFinite(x) ? null : Math.round(x * 10000) / 10000);
+  function entryContext() {             // 진입 순간, 이미 보인 봉만으로 계산 (앞날 정보 없음)
+    const i = cursor, c = bars[i].c, from = Math.max(0, i - 199), win = bars.slice(from, i + 1);
+    let hi = -Infinity, lo = Infinity; for (const b of win) { hi = Math.max(hi, b.h); lo = Math.min(lo, b.l); }
+    const ch = (n) => (i - n >= 0 ? c / bars[i - n].c - 1 : null);
+    const tr14 = []; for (let k = Math.max(1, i - 13); k <= i; k++) tr14.push(Math.max(bars[k].h, bars[k - 1].c) - Math.min(bars[k].l, bars[k - 1].c));   // 진폭(전 봉 종가 포함)
+    const qv48 = bars.slice(Math.max(0, i - 48), i).map((b) => b.qv || 0), avgQv = qv48.length ? qv48.reduce((s, x) => s + x, 0) / qv48.length : 0;
+    const vol48 = bars.slice(Math.max(0, i - 48), i).map((b) => b.v || 0), avgV = vol48.length ? vol48.reduce((s, x) => s + x, 0) / vol48.length : 0;
+    const last = bars[i];
+    return {
+      rangePos: r4(hi > lo ? (c - lo) / (hi - lo) : 0.5),         // 최근 200봉 고저 안의 위치 (0 = 최저, 1 = 최고)
+      fromHigh: r4(c / hi - 1), fromLow: r4(c / lo - 1),           // 200봉 최고·최저에서 떨어진 정도
+      ch1: r4(ch(1)), ch6: r4(ch(6)), ch12: r4(ch(12)), ch48: r4(ch(48)),   // 직전 5분·30분·1시간·4시간 변화
+      atr14: r4(tr14.length ? tr14.reduce((s, x) => s + x, 0) / tr14.length / c : null),   // 변동성 (14봉 평균 진폭 ÷ 가격)
+      volX: r4(avgQv ? (last.qv || 0) / avgQv : avgV ? (last.v || 0) / avgV : null),        // 진입 봉 거래대금 ÷ 직전 48봉 평균
+      takerBuy: r4(last.bv != null && last.v ? last.bv / last.v : null),                     // 진입 봉 매수 체결 비율
+      candle: r4(last.c / last.o - 1),
+    };
+  }
+  const roundTrades = (rid) => trades.filter((t) => t.round === rid);
+  const baseNewPos2 = newPos;
+  newPos = function (ord, t) {
+    const pos = baseNewPos2(ord, t), r = G.round;
+    try {
+      const prev = r ? roundTrades(r.id).slice(-1)[0] : null;
+      pos.x = {
+        v: LOG_VER, ctx: entryContext(), entryTurn: r ? r.turn : null, kind: orderType,
+        decisionSec: pendingDecision, slEntry: ord.sl ?? null, tpEntry: ord.tp ?? null, slLog: [], tpLog: [], adds: [],
+        afterPrev: prev ? { turns: Math.round((t - prev.t_out) / 300), prevPnl: r4(prev.pnl), prevLoss: prev.pnl < 0, sizeRatio: r4(ord.margin / (prev.margin || ord.margin)) } : null,
+        firstInRound: !prev, session: G.sess ? G.sess.id : null, hourKst: +origFmt(Math.floor(Date.now() / 1000)).slice(11, 13),
+      };
+      pos._sl = pos.sl ?? null; pos._tp = pos.tp ?? null;
+      if (r && r.firstEntryTurn == null) r.firstEntryTurn = r.turn;
+    } catch (e) { console.error(e); }
+    pendingDecision = null;
+    return pos;
+  };
+  const baseAddFill2 = addFill;
+  addFill = function (price, o, t) {
+    try { if (open && open.x) { const u = posPnl(open, price).net; open.x.adds.push({ t, price, margin: o.margin, upnl: r4(u), losing: u < 0, turn: G.round ? G.round.turn : null }); } } catch (e) {}
+    return baseAddFill2(price, o, t);
+  };
+  const baseSubmit = submit;
+  submit = function (side) { pendingDecision = Math.round((Date.now() - lastRevealAt) / 100) / 10; return baseSubmit(side); };
+  function trackStops() {               // 손절·익절이 바뀌었으면 기록 (입력·드래그·취소 어느 길이든 renderPos 를 거침)
+    if (!open || !open.x) return;
+    const L = (k, log) => {
+      const now = open[k] ?? null, was = open['_' + k];
+      if (now === was) return;
+      const away = k === 'sl' && was != null && now != null && (open.side === 'long' ? now < was : now > was);   // 손절을 더 멀리
+      log.push({ t: nowT(), turn: G.round ? G.round.turn : null, from: was, to: now, away: !!away, removed: was != null && now == null });
+      open['_' + k] = now;
+    };
+    L('sl', open.x.slLog); L('tp', open.x.tpLog);
+  }
+  const baseTradeHook2 = tradeHook;
+  tradeHook = function (tr) {
+    baseTradeHook2(tr);
+    try {
+      if (!open || !open.x) return;
+      trackStops();
+      const x = { ...open.x }, long = tr.side === 'long';
+      let mfe = 0, mae = 0;
+      for (const b of bars) if (b.t > tr.t_in && b.t <= tr.t_out) {
+        mfe = Math.max(mfe, long ? b.h / tr.entry - 1 : 1 - b.l / tr.entry);
+        mae = Math.min(mae, long ? b.l / tr.entry - 1 : 1 - b.h / tr.entry);
+      }
+      const res = pnlPct(tr.side, tr.entry, tr.exit) / 100;
+      const firstEntry = (open.fills && open.fills[0]) ? open.fills[0].price : tr.entry;
+      const riskPct = x.slEntry != null ? Math.abs(firstEntry - x.slEntry) / firstEntry : null;                // 처음 계획한 손실폭 (가격 기준)
+      const riskUsd = riskPct != null ? riskPct * (open.fills && open.fills[0] ? open.fills[0].notional : tr.notional) : null;
+      Object.assign(x, {
+        mfe: r4(mfe), mae: r4(mae), res: r4(res), cap: mfe > 0 ? r4(res / mfe) : null,
+        holdTurns: Math.round((tr.t_out - tr.t_in) / 300), riskPct: r4(riskPct), R: riskUsd ? r4(tr.pnl / riskUsd) : null,
+        slMoves: x.slLog.length, slAway: x.slLog.filter((z) => z.away).length, slRemoved: x.slLog.some((z) => z.removed),
+        addsLosing: x.adds.filter((a) => a.losing).length, addsWinning: x.adds.filter((a) => !a.losing).length,
+        exitTurn: G.round ? G.round.turn : null, balBefore: r4(acct.balance - tr.pnl), riskOfBal: r4(tr.pnl / Math.max(1, acct.balance - tr.pnl)),
+      });
+      delete x.v;
+      tr.x = x; tr.logv = LOG_VER;
+    } catch (e) { console.error(e); }
+  };
+  const baseRenderPos2 = renderPos;
+  renderPos = function () { try { trackStops(); } catch (e) {} baseRenderPos2(); };
+  // 턴마다 생각한 시간 (실제 초). 한 번에 여러 봉을 넘기면 한 번만 적음
+  const baseStep2 = step;
+  step = function (n) {
+    const r = G.round, before = r ? r.turn : 0;
+    baseStep2(n);
+    if (r && r.turn > before) {
+      const sec = Math.min(600, Math.round((Date.now() - lastRevealAt) / 100) / 10);
+      (r.thinkSec = r.thinkSec || []).push(sec);
+      lastRevealAt = Date.now();
+    }
+  };
+  // 세션: 30분 넘게 쉬면 새 세션
+  function touchSession() {
+    const now = Date.now();
+    if (!G.sess || now - (G.sess.last || 0) > 30 * 60000) G.sess = { id: (G.sess ? G.sess.id : 0) + 1, start: now, last: now, rounds: 0 };
+    G.sess.last = now;
+  }
+  function streakNow() {                 // 지금까지 끝난 종목의 연승(+)·연패(−) 수
+    let n = 0; const rs = G.rounds;
+    for (let i = rs.length - 1; i >= 0; i--) { const w = rs[i].pnl > 0; if (n === 0) n = w ? 1 : -1; else if ((n > 0) === w) n += w ? 1 : -1; else break; }
+    return n;
+  }
+  function onRoundStart(r) {
+    touchSession(); G.sess.rounds++;
+    Object.assign(r, { session: G.sess.id, sessIdx: G.sess.rounds, streakStart: streakNow(), hourKst: +origFmt(Math.floor(Date.now() / 1000)).slice(11, 13), thinkSec: [], logv: LOG_VER });
+    lastRevealAt = Date.now();
+  }
+  function roundExtra(r, h) {            // 끝난 종목 기록에 붙일 것
+    const t = r.thinkSec || [];
+    const sorted = [...t].sort((a, b) => a - b);
+    Object.assign(h, { session: r.session ?? null, sessIdx: r.sessIdx ?? null, streakStart: r.streakStart ?? null, hourKst: r.hourKst ?? null,
+      firstEntryTurn: r.firstEntryTurn ?? null, thinkAvg: t.length ? r4(t.reduce((s, x) => s + x, 0) / t.length) : null, thinkMed: sorted.length ? sorted[sorted.length >> 1] : null,
+      thinkSec: t, minEqPct: r.minEq != null ? r4(r.minEq / r.startBal - 1) : null, logv: LOG_VER });
+  }
+
+  // ------------------------------------------------------------ 분석용 내보내기
+  function exportData() {
+    const live = hidden() ? G.round.id : null;
+    const tr = trades.filter((t) => t.round !== live), rs = G.rounds;
+    const rmap = Object.fromEntries(rs.map((h) => [h.rid, h]));
+    const day = origFmt(Math.floor(Date.now() / 1000)).slice(0, 10);
+    const json = {
+      app: 'chart-replay 차트게임', format: 'chart-game-analysis', version: LOG_VER, exportedAtKst: origFmt(Math.floor(Date.now() / 1000)),
+      rules: { seedUsdt: SEED, leverage: LEV, marginMode: '격리', feePct: FEE_PCT, turnsPerRound: TURNS, barSec: 300, preBars: PRE },
+      notes: ['가격 % 는 소수 (0.01 = 1%)', 'R = 손익 ÷ 처음 손절까지의 손실액 (진입 때 손절가가 있을 때만)', 'ctx 는 진입 순간까지 보인 봉으로만 계산', '시각은 KST 문자열과 UTC 초를 함께'],
+      account: { balance: acct.balance, tier: TIERS[tierIndex(acct.balance)].name, bestTier: TIERS[G.bestTier || 0].name, playHours: r4((G.playMs || 0) / 3600000), achievements: Object.keys(G.ach || {}) },
+      rounds: rs.map((h) => ({ ...h, review: h.review ? { ...h.review, trades: undefined } : null, fromKst: origFmt(h.from), toKst: origFmt(h.to) })),
+      trades: tr.map((t, i) => ({ i: i + 1, roundN: rmap[t.round] ? rmap[t.round].n : null, coin: t.symbol, side: t.side, inKst: origFmt(t.t_in), outKst: origFmt(t.t_out), ...t })),
+      orders: orders.filter((o) => o.round !== live).map((o) => ({ ...o, tKst: origFmt(o.t), ftKst: o.ft ? origFmt(o.ft) : null })),
+    };
+    download(`chart-game-analysis-${day}.json`, JSON.stringify(json, null, 1), 'application/json');
+    // 포지션 한 줄씩 CSV (엑셀·스프레드시트용)
+    const cols = [['번호', (t, i) => i + 1], ['종목번호', (t) => (rmap[t.round] ? rmap[t.round].n : '')], ['코인', (t) => t.symbol], ['방향', (t) => (t.side === 'long' ? '롱' : '숏')],
+      ['진입(KST)', (t) => origFmt(t.t_in)], ['청산(KST)', (t) => origFmt(t.t_out)], ['평단', (t) => t.entry], ['청산가', (t) => t.exit], ['증거금', (t) => t.margin], ['손익', (t) => r4(t.pnl)],
+      ['수수료', (t) => r4(t.fees)], ['청산방식', (t) => (t.liq ? '강제청산' : t.reason)], ['진입방식', (t) => t.x && t.x.kind], ['진입턴', (t) => t.x && t.x.entryTurn], ['보유턴', (t) => t.x && t.x.holdTurns],
+      ['결과%', (t) => t.x && t.x.res], ['MFE', (t) => t.x && t.x.mfe], ['MAE', (t) => t.x && t.x.mae], ['포착률', (t) => t.x && t.x.cap], ['손절가(진입때)', (t) => t.x && t.x.slEntry], ['익절가(진입때)', (t) => t.x && t.x.tpEntry],
+      ['계획손실폭', (t) => t.x && t.x.riskPct], ['R', (t) => t.x && t.x.R], ['손절옮김', (t) => t.x && t.x.slMoves], ['손절멀리', (t) => t.x && t.x.slAway], ['손절없앰', (t) => t.x && (t.x.slRemoved ? 1 : 0)],
+      ['물타기', (t) => t.x && t.x.addsLosing], ['불타기', (t) => t.x && t.x.addsWinning], ['생각한초', (t) => t.x && t.x.decisionSec],
+      ['직전매매후턴', (t) => t.x && t.x.afterPrev && t.x.afterPrev.turns], ['직전손실', (t) => t.x && t.x.afterPrev && (t.x.afterPrev.prevLoss ? 1 : 0)], ['증거금배율(직전대비)', (t) => t.x && t.x.afterPrev && t.x.afterPrev.sizeRatio],
+      ['200봉위치', (t) => t.x && t.x.ctx.rangePos], ['5분변화', (t) => t.x && t.x.ctx.ch1], ['30분변화', (t) => t.x && t.x.ctx.ch6], ['1시간변화', (t) => t.x && t.x.ctx.ch12], ['4시간변화', (t) => t.x && t.x.ctx.ch48],
+      ['변동성ATR', (t) => t.x && t.x.ctx.atr14], ['거래대금배수', (t) => t.x && t.x.ctx.volX], ['매수체결비율', (t) => t.x && t.x.ctx.takerBuy],
+      ['세션', (t) => t.x && t.x.session], ['세션내종목순서', (t) => (rmap[t.round] ? rmap[t.round].sessIdx : '')], ['시작때연승연패', (t) => (rmap[t.round] ? rmap[t.round].streakStart : '')], ['시각(KST시)', (t) => t.x && t.x.hourKst]];
+    const esc = (v) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const csv = '﻿' + cols.map((c) => c[0]).join(',') + '\n' + tr.map((t, i) => cols.map((c) => esc(c[1](t, i))).join(',')).join('\n');
+    download(`chart-game-positions-${day}.csv`, csv, 'text/csv');
+    flash(`분석용 파일 2개를 받았어요 (포지션 ${tr.length}개 · 종목 ${rs.length}개)${live ? ' · 진행 중인 종목은 끝난 뒤에 들어가요' : ''}.`, 5000);
+  }
+  function download(name, text, type) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' })); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
