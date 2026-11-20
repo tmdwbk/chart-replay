@@ -174,9 +174,9 @@
     .gwhy div { display:grid; grid-template-columns:80px 1fr 30px; align-items:center; gap:6px; font-size:12px; margin:3px 0; }
     .gwhy i { display:block; height:8px; background:#5b8def; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
     #fillLayer { position:absolute; inset:0; pointer-events:none; z-index:3; overflow:hidden; }
-    .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:15px; height:15px; padding:0 2px; border-radius:3px; font:700 10px/15px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; box-shadow:0 1px 3px rgba(0,0,0,.5); }
-    .fbadge.b { background:#26a69a; } .fbadge.s { background:#ef5350; }
-    .fbadge:hover { outline:2px solid #fff; z-index:2; }
+    .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:10px; height:10px; padding:0 1px; border-radius:2px; font:700 7px/10px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; }   /* 15px 의 4/6 */
+    .fbadge.b { background:rgba(38,166,154,.8); } .fbadge.s { background:rgba(239,83,80,.8); }   /* 글자 둘레 색: 불투명도 80% */
+    .fbadge:hover { outline:1px solid #fff; z-index:2; }
     #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
     #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
@@ -1084,7 +1084,7 @@
       // 캔들을 가리지 않게: B 는 그 봉 저가 아래, S 는 고가 위에 (체결 가격은 올리면 보임)
       const a = barAt.get(g.t), x = chart.timeScale().timeToCoordinate(g.t + KST_OFF);
       const edge = a ? candle.priceToCoordinate(g.dir === 'long' ? a.l : a.h) : candle.priceToCoordinate(g.price);
-      const y = edge == null ? null : edge + (g.dir === 'long' ? 11 : -11);
+      const y = edge == null ? null : edge + (g.dir === 'long' ? 8 : -8);   // 배지 반 높이(5) + 띄움(3)
       if (x == null || y == null || x < 0 || x > W || y < 0 || y > H) { g.el.style.display = 'none'; continue; }
       g.el.style.display = ''; g.el.style.left = x + 'px'; g.el.style.top = y + 'px';
     }
