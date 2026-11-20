@@ -146,7 +146,7 @@
     .tlist { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:8px; }
     .tlist div { display:flex; flex-direction:column; align-items:center; background:#232838; border-radius:10px; padding:6px 2px; font-size:11.5px; }
     .tlist div.me { outline:1px solid #5b8def; }
-    .grv { display:grid; grid-template-columns:repeat(4, auto); gap:4px 14px; justify-content:center; margin:12px 0 4px; }
+    .grv { display:grid; grid-template-columns:repeat(5, auto); gap:4px 14px; justify-content:center; margin:12px 0 4px; }
     .grv div { display:flex; flex-direction:column; align-items:center; font-size:12px; } .grv b { font-size:15px; }
     .gresach { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
     .gresach span { background:#2b3445; border:1px solid #f0b90b66; color:#ffe08a; border-radius:12px; padding:3px 10px; font-size:12px; }
@@ -548,6 +548,7 @@
 
   // ------------------------------------------------------------ 복기 (체스 게임 리뷰처럼: 끝난 종목을 숫자로 돌아보기)
   // 가격 기준 %. 3배 레버리지 ROE 는 대략 ×3.
+  const POST_N = 10, GIVEBACK_MFE = 0.01;   // 청산 뒤 몇 턴을 볼지 · '한때 수익'으로 칠 폭(가격 +1%)
   function buildReview(r) {
     const a = r.firstTurn, b = Math.min(cursor, bars.length - 1), seg = bars.slice(a, b + 1);
     const c0 = seg[0].c;
@@ -558,6 +559,13 @@
     }
     const list = trades.filter((t) => t.round === r.id).map((t) => {
       const held = seg.filter((x) => x.t > t.t_in && x.t <= t.t_out);
+      // 청산 뒤 10턴: 같은 방향으로 더 간 폭(크면 일찍 판 것) · 반대로 간 폭(크면 잘 나온 것). 종목 끝까지 남은 봉이 적으면 그만큼만
+      const after = seg.filter((x) => x.t > t.t_out).slice(0, POST_N);
+      let postFav = 0, postAdv = 0;
+      for (const x of after) {
+        postFav = Math.max(postFav, t.side === 'long' ? x.h / t.exit - 1 : 1 - x.l / t.exit);
+        postAdv = Math.max(postAdv, t.side === 'long' ? 1 - x.l / t.exit : x.h / t.exit - 1);
+      }
       const long = t.side === 'long';
       let mfe = 0, mae = 0;
       for (const x of held) {
@@ -565,11 +573,16 @@
         mae = Math.min(mae, long ? x.l / t.entry - 1 : 1 - x.h / t.entry);
       }
       const res = pnlPct(t.side, t.entry, t.exit) / 100;
+      const giveback = mfe >= GIVEBACK_MFE && t.pnl < 0;              // 수익→손실 전환: 한때 +1% 이상 갔는데 손실로 끝남
+      const post = after.length ? { fav: r4(postFav), adv: r4(postAdv), n: after.length } : null;
+      if (t.x) { t.x.post = post; t.x.giveback = giveback; }            // 내보내기·전적에도 쓰도록 포지션 기록에 붙인다
       return { side: t.side, t_in: t.t_in, t_out: t.t_out, entry: t.entry, exit: t.exit, res, mfe, mae, cap: mfe > 0 ? res / mfe : null,
-        hold: Math.round((t.t_out - t.t_in) / 300), pnl: t.pnl, reason: t.reason, liq: t.liq };
+        hold: Math.round((t.t_out - t.t_in) / 300), pnl: t.pnl, reason: t.reason, liq: t.liq, post, giveback };
     });
     const caps = list.filter((x) => x.cap != null && x.mfe > 0.002).map((x) => x.cap);
-    return { move: seg[seg.length - 1].c / c0 - 1, bestL, bestS, trades: list, avgCap: caps.length ? caps.reduce((s, x) => s + x, 0) / caps.length : null };
+    const reached = list.filter((x) => x.mfe >= GIVEBACK_MFE);
+    return { move: seg[seg.length - 1].c / c0 - 1, bestL, bestS, trades: list, avgCap: caps.length ? caps.reduce((s, x) => s + x, 0) / caps.length : null,
+      giveback: list.filter((x) => x.giveback).length, reached: reached.length };
   }
   const pc = (x, d = 2) => (x * 100 >= 0 ? '+' : '') + (x * 100).toFixed(d) + '%';
   function reviewSummary(rv) {
@@ -577,8 +590,9 @@
     return `<div class="grv"><div><span class="dim">이 구간 최대 롱 폭</span><b class="up">${pc(rv.bestL)}</b></div>` +
       `<div><span class="dim">최대 숏 폭</span><b class="down">${pc(rv.bestS)}</b></div>` +
       `<div><span class="dim">처음→끝</span><b class="${cls(rv.move)}">${pc(rv.move)}</b></div>` +
-      `<div><span class="dim">평균 포착률</span><b>${rv.avgCap == null ? '-' : Math.round(rv.avgCap * 100) + '%'}</b></div></div>` +
-      `<div class="dim" style="font-size:11.5px">가격 기준 % (3배 레버리지 수익률은 약 ×3) · 포착률 = 내 결과 ÷ 들고 있는 동안 가장 좋았던 지점</div>`;
+      `<div><span class="dim">평균 포착률</span><b>${rv.avgCap == null ? '-' : Math.round(rv.avgCap * 100) + '%'}</b></div>` +
+      (rv.reached != null ? `<div><span class="dim">수익→손실</span><b class="${rv.giveback ? 'down' : ''}">${rv.reached ? `${rv.giveback}/${rv.reached}` : '-'}</b></div>` : '') + `</div>` +
+      `<div class="dim" style="font-size:11.5px">가격 기준 % (3배 레버리지 수익률은 약 ×3) · 포착률 = 내 결과 ÷ 들고 있는 동안 가장 좋았던 지점 · 수익→손실 = 한때 +1% 이상 갔다가 손실로 끝난 포지션 / +1% 이상 갔던 포지션</div>`;
   }
   function renderReviewTab(el) {
     const h = [...G.rounds].reverse().find((x) => x.review);
@@ -586,10 +600,12 @@
     const rv = h.review, cur = G.round && G.round.done && G.rounds[G.rounds.length - 1] === h;
     el.innerHTML = `<div style="padding:6px 12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap"><b>#${h.n} ${h.name} (${h.short})</b>` +
       `<span class="dim">${origFmt(h.from)} ~ ${origFmt(h.to).slice(11)}</span>${reviewSummary(rv).replace('class="grv"', 'class="grv" style="margin:0"')}</div>` +
-      (rv.trades.length ? '<table><thead><tr><th>#</th><th>방향</th><th>진입 → 청산 (KST)</th><th>보유</th><th>평단 → 청산가</th><th>결과 (가격)</th><th>가장 좋았을 때 (MFE)</th><th>가장 나빴을 때 (MAE)</th><th>포착률</th><th>실현 손익</th><th>청산 방식</th></tr></thead><tbody>' +
+      (rv.trades.length ? '<table><thead><tr><th>#</th><th>방향</th><th>진입 → 청산 (KST)</th><th>보유</th><th>평단 → 청산가</th><th>결과 (가격)</th><th>가장 좋았을 때 (MFE)</th><th>가장 나빴을 때 (MAE)</th><th>포착률</th><th title="청산 뒤 10턴 동안 같은 방향으로 더 간 폭 (크면 일찍 판 것)">청산 뒤 더 간 폭</th><th title="청산 뒤 10턴 동안 반대로 간 폭 (크면 잘 나온 것)">청산 뒤 반대 폭</th><th>실현 손익</th><th>청산 방식</th></tr></thead><tbody>' +
         rv.trades.map((t, i) => `<tr data-i="${i}" style="${cur ? 'cursor:pointer' : ''}"><td class="dim">${i + 1}</td><td>${sideTxt(t.side)}</td><td class="dim">${origFmt(t.t_in).slice(11)} → ${origFmt(t.t_out).slice(11)}</td><td>${t.hold}턴</td>` +
           `<td>${fmtN(t.entry)} → ${fmtN(t.exit)}</td><td class="${cls(t.res)}">${pc(t.res)}</td><td class="up">${pc(t.mfe)}</td><td class="down">${pc(t.mae)}</td>` +
-          `<td>${t.cap == null ? '-' : Math.round(t.cap * 100) + '%'}</td><td class="${cls(t.pnl)}">${usdS(t.pnl)}</td><td class="dim">${t.liq ? '강제청산' : ({ tp: '익절', sl: '손절', reduce: '지정가', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason}</td></tr>`).join('') + '</tbody></table>' +
+          `<td>${t.cap == null ? '-' : Math.round(t.cap * 100) + '%'}${t.giveback ? ' <span class="tag" style="color:#ef5350">수익→손실</span>' : ''}</td>` +
+          `<td>${t.post ? `<span class="${t.post.fav > Math.max(0, t.res) ? 'up' : 'dim'}">+${(t.post.fav * 100).toFixed(2)}%</span>${t.post.n < POST_N ? ` <span class="dim">(${t.post.n}턴)</span>` : ''}` : '<span class="dim">-</span>'}</td>` +
+          `<td>${t.post ? `<span class="dim">${(t.post.adv * 100).toFixed(2)}%</span>` : '<span class="dim">-</span>'}</td><td class="${cls(t.pnl)}">${usdS(t.pnl)}</td><td class="dim">${t.liq ? '강제청산' : ({ tp: '익절', sl: '손절', reduce: '지정가', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason}</td></tr>`).join('') + '</tbody></table>' +
         (cur ? '<div class="dim" style="padding:6px 12px; font-size:11.5px">줄을 누르면 차트가 그 포지션 구간으로 이동해요.</div>' : '')
         : '<div class="empty">이 종목에서는 포지션을 잡지 않았어요 (관망).</div>');
     if (cur) el.querySelectorAll('tr[data-i]').forEach((tr) => tr.onclick = () => {
@@ -797,6 +813,14 @@
     let peak = SEED, mdd = 0;
     for (const v of [SEED].concat(rs.map((x) => x.endCash))) { peak = Math.max(peak, v); mdd = Math.max(mdd, 1 - v / peak); }
     const fees = tr.reduce((s, t) => s + (t.fees || 0), 0);
+    // 청산 습관 (2026-11-20 이후 기록된 포지션만: 포착률·청산 뒤 움직임·수익→손실)
+    const xs = tr.filter((t) => t.x && t.x.mfe != null), wins = xs.filter((t) => t.pnl > 0);
+    const avg = (arr) => (arr.length ? arr.reduce((p, q) => p + q, 0) / arr.length : null);
+    const reached = xs.filter((t) => t.x.mfe >= GIVEBACK_MFE), gb = reached.filter((t) => t.pnl < 0);
+    const wPost = wins.filter((t) => t.x.post);
+    const hab = { cap: avg(wins.filter((t) => t.x.cap != null).map((t) => t.x.cap)), gb: reached.length ? gb.length / reached.length : null, gbN: `${gb.length}/${reached.length}`,
+      postFav: avg(wPost.map((t) => t.x.post.fav)), early: wPost.length ? wPost.filter((t) => t.x.post.fav > t.x.res).length / wPost.length : null, n: xs.length };
+    const pf = (v) => (v == null ? '-' : (v * 100).toFixed(0) + '%');
     const card = (k, v, c = '') => `<div class="gsc"><div class="dim">${k}</div><b class="${c}">${v}</b></div>`;
     const sideRow = (lab, list) => { const s = statsOf(list); return `<tr><td>${lab}</td><td>${s.n}</td><td>${s.n ? pctS(s.win) : '-'}</td><td class="${cls(s.pnl)}">${usdS(s.pnl)}</td><td class="${cls(s.exp)}">${s.n ? usdS(s.exp) : '-'}</td><td>${s.rr != null ? s.rr.toFixed(2) : '-'}</td></tr>`; };
     const bySym = {};
@@ -808,6 +832,10 @@
       `<div class="gscs">${card('끝낸 종목', rs.length)}${card('이긴 종목', rs.length ? pctS(rs.filter((x) => x.pnl > 0).length / rs.length) : '-')}${card('포지션', a.n)}${card('포지션 승률', a.n ? pctS(a.win) : '-')}` +
       `${card('평균 손익비', a.rr != null ? a.rr.toFixed(2) : '-')}${card('포지션당 기대값', a.n ? usdS(a.exp) : '-', cls(a.exp))}${card('총 실현 손익', usdS(a.pnl), cls(a.pnl))}${card('낸 수수료', usd(fees))}` +
       `${card('최다 연승 / 연패', `${best} / ${worst}`)}${card('최대 낙폭 (종목 끝 잔고)', mdd ? '-' + (mdd * 100).toFixed(1) + '%' : '0%', mdd ? 'down' : '')}${card('플레이타임', fmtDur(G.playMs || 0))}${card('업적', `${ACH.filter((x) => (G.ach || {})[x.k]).length}/${ACH.length}`)}</div>` +
+      `<h4>청산 습관 <span class="dim" style="font-weight:400">(실력 측정용 기록이 있는 포지션 ${hab.n}개 · 많을수록 믿을 만해요)</span></h4>` +
+      `<div class="gscs">${card('이긴 포지션 평균 포착률', pf(hab.cap))}${card('수익→손실 전환율', hab.gb == null ? '-' : `${pf(hab.gb)} <small class="dim">(${hab.gbN})</small>`, hab.gb > 0.3 ? 'down' : '')}` +
+      `${card('이긴 포지션: 청산 뒤 더 간 폭', hab.postFav == null ? '-' : '+' + (hab.postFav * 100).toFixed(2) + '%')}${card('일찍 판 비율', pf(hab.early), hab.early > 0.5 ? 'down' : '')}</div>` +
+      `<div class="dim" style="font-size:11.5px; margin-top:4px">수익→손실 = 한때 +1% 이상 갔던 포지션 중 손실로 끝난 비율 · 청산 뒤 = 청산하고 10턴 안에 같은 방향으로 더 간 폭(가격 기준) · 일찍 판 비율 = 이긴 포지션 중 청산 뒤에 더 간 폭이 내가 가져간 폭보다 큰 비율</div>` +
       `<h4>잔고 · 티어 변화 <span class="dim" style="font-weight:400">(종목이 끝날 때 잔고, 세로는 로그 눈금)</span></h4>${balChart(rs)}` +
       `<div class="g2"><div><h4>롱 · 숏</h4><table class="gst"><tr><th></th><th>횟수</th><th>승률</th><th>손익</th><th>기대값</th><th>손익비</th></tr>${sideRow('<span class="up">롱</span>', tr.filter((t) => t.side === 'long'))}${sideRow('<span class="down">숏</span>', tr.filter((t) => t.side === 'short'))}</table>` +
       `<h4>청산 방식</h4><div class="gwhy">${Object.entries(why).sort((p, q) => q[1] - p[1]).map(([k, v]) => `<div><span>${k}</span><i style="width:${v / Math.max(1, tr.length) * 100}%"></i><b>${v}</b></div>`).join('') || '<span class="dim">아직 없음</span>'}</div></div>` +
@@ -971,7 +999,7 @@
     const cols = [['번호', (t, i) => i + 1], ['종목번호', (t) => (rmap[t.round] ? rmap[t.round].n : '')], ['코인', (t) => t.symbol], ['방향', (t) => (t.side === 'long' ? '롱' : '숏')],
       ['진입(KST)', (t) => origFmt(t.t_in)], ['청산(KST)', (t) => origFmt(t.t_out)], ['평단', (t) => t.entry], ['청산가', (t) => t.exit], ['증거금', (t) => t.margin], ['손익', (t) => r4(t.pnl)],
       ['수수료', (t) => r4(t.fees)], ['청산방식', (t) => (t.liq ? '강제청산' : t.reason)], ['진입방식', (t) => t.x && t.x.kind], ['진입턴', (t) => t.x && t.x.entryTurn], ['보유턴', (t) => t.x && t.x.holdTurns],
-      ['결과%', (t) => t.x && t.x.res], ['MFE', (t) => t.x && t.x.mfe], ['MAE', (t) => t.x && t.x.mae], ['포착률', (t) => t.x && t.x.cap], ['손절가(진입때)', (t) => t.x && t.x.slEntry], ['익절가(진입때)', (t) => t.x && t.x.tpEntry],
+      ['결과%', (t) => t.x && t.x.res], ['MFE', (t) => t.x && t.x.mfe], ['MAE', (t) => t.x && t.x.mae], ['포착률', (t) => t.x && t.x.cap], ['청산뒤더간폭', (t) => t.x && t.x.post && t.x.post.fav], ['청산뒤반대폭', (t) => t.x && t.x.post && t.x.post.adv], ['청산뒤본봉수', (t) => t.x && t.x.post && t.x.post.n], ['수익손실전환', (t) => t.x && t.x.mfe != null ? (t.x.giveback ? 1 : 0) : ''], ['손절가(진입때)', (t) => t.x && t.x.slEntry], ['익절가(진입때)', (t) => t.x && t.x.tpEntry],
       ['계획손실폭', (t) => t.x && t.x.riskPct], ['R', (t) => t.x && t.x.R], ['손절옮김', (t) => t.x && t.x.slMoves], ['손절멀리', (t) => t.x && t.x.slAway], ['손절없앰', (t) => t.x && (t.x.slRemoved ? 1 : 0)],
       ['물타기', (t) => t.x && t.x.addsLosing], ['불타기', (t) => t.x && t.x.addsWinning], ['생각한초', (t) => t.x && t.x.decisionSec],
       ['직전매매후턴', (t) => t.x && t.x.afterPrev && t.x.afterPrev.turns], ['직전손실', (t) => t.x && t.x.afterPrev && (t.x.afterPrev.prevLoss ? 1 : 0)], ['증거금배율(직전대비)', (t) => t.x && t.x.afterPrev && t.x.afterPrev.sizeRatio],
