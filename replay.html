@@ -106,6 +106,10 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
   #bigBtn { background:none; border:1px solid #3a3a40; border-radius:4px; padding:2px 8px; color:var(--dim); font-size:12px; }
   #bigBtn:hover { color:#fff; }
   @media (max-width: 900px) { #bigBtn { display:none; } }
+  /* 오른쪽 스크롤 막대가 두 개(페이지 + 주문 칸)로 보이던 것: 페이지 막대는 숨기고(휠·[기록 크게 보기]로는 그대로 내려감), 주문 칸 막대는 얇고 어둡게 */
+  html { scrollbar-width:none; } html::-webkit-scrollbar { display:none; }
+  #side { scrollbar-width:thin; scrollbar-color:#3f3f46 transparent; }
+  #side::-webkit-scrollbar { width:6px; } #side::-webkit-scrollbar-thumb { background:#3f3f46; border-radius:3px; } #side::-webkit-scrollbar-track { background:transparent; }
   #chart { cursor:crosshair; }
   kbd { background:#232326; border:1px solid #3a3a40; border-radius:3px; padding:0 4px; font-size:11px; }
 </style>
