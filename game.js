@@ -74,7 +74,7 @@
     if (cursor < 0 || !G.round) return;
     const a = agg[agg.length - 1], ch = (a.c / a.o - 1) * 100, r = G.round;
     $('info').innerHTML =
-      `<span><b>${dispSym()}</b> <span class="dim">${hidden() ? '종목·날짜는 종목이 끝나면 공개' : r.name + ' · ' + (r.sources || []).map((x) => (x === 'bybit' ? '바이비트' : x === 'gate' ? '게이트' : '바이낸스') + ' 선물') + (r.mine ? ' · 🔁 내 매매 차트' : '').join('·')}</span></span>` +
+      `<span><b>${dispSym()}</b> <span class="dim">${hidden() ? '종목·날짜는 종목이 끝나면 공개' : r.name + ' · ' + (r.sources || []).map((x) => (x === 'bybit' ? '바이비트' : x === 'gate' ? '게이트' : '바이낸스') + ' 선물').join('·') + (r.mine ? ' · 🔁 내 매매 차트' : '')}</span></span>` +
       `<span>턴 <b>${r.turn}/${TURNS}</b></span><span>지금 <b>${fmtKst(nowT())}</b> KST</span>` +
       `<span>5분 봉 시 ${fmtP(a.o)} 고 ${fmtP(a.h)} 저 ${fmtP(a.l)} 종 <b class="${cls(ch)}">${fmtP(a.c)}</b> <span class="${cls(ch)}">${sgn(ch)}%</span></span>` +
       `<span class="dim">거래대금 ${fmtBig(a.qv)} USDT</span>`;
@@ -892,7 +892,7 @@
   const baseNewPos = newPos; newPos = function (...a) { sfx('fill'); return baseNewPos(...a); };
   const baseAddFill = addFill; addFill = function (...a) { sfx('fill'); return baseAddFill(...a); };
   const basePartialAt = partialAt; partialAt = function (...a) { const x = basePartialAt(...a); sfx(x.pnl > 0 ? 'win' : 'loss'); return x; };
-  const baseTradeHook = tradeHook; tradeHook = function (tr) { baseTradeHook(tr); if (isTrade(tr)) sfx(tr.liq ? 'liq' : tr.pnl > 0 ? 'win' : 'loss'); };
+  const baseTradeHook = tradeHook; tradeHook = function (tr) { baseTradeHook(tr); if (isTrade(tr) && tr.reason !== 'round') sfx(tr.liq ? 'liq' : tr.pnl > 0 ? 'win' : 'loss'); };   // 종목 끝 자동 청산은 소리 없음
 
   // ------------------------------------------------------------ 결과 숫자 올라가는 연출
   function countUp(el, to, fmt, ms = 900) {
@@ -1431,6 +1431,19 @@
   // 승급전: 포지션이 끝까지 청산될 때마다 한 판 (수수료·펀딩까지 뺀 순손익으로)
   const baseTradeHookRank = tradeHook;
   tradeHook = function (tr) { baseTradeHookRank(tr); if (isTrade(tr)) { try { updateRank(tr); tierDrawn = null; } catch (e) { console.error(e); } } };
+
+  // 지정가 칸: 직접 고치지 않았으면 턴마다 지금 가격으로 따라간다 (예전엔 종목 시작 가격에 멈춰 있어서,
+  // 가격이 움직인 뒤 B·S 를 누르면 한쪽은 바로 체결되고 다른 쪽은 지금 가격 위·아래 대기 주문이 됐다)
+  let pxDirty = false;
+  $('entryPx').addEventListener('input', () => { pxDirty = true; });
+  const followPx = () => { if (!pxDirty && cursor >= 0 && bars.length) $('entryPx').value = +curPrice().toFixed(precision); };
+  const baseStepPx = step;
+  step = function (n) { baseStepPx(n); followPx(); renderAcct(); };
+  const baseSubmitPx = submit;
+  submit = function (side) { const r = baseSubmitPx(side); pxDirty = false; followPx(); return r; };
+  if ($('btnLast')) $('btnLast').addEventListener('click', () => { pxDirty = false; });
+  const baseShowWindowPx = showWindow;
+  showWindow = function (w, r) { baseShowWindowPx(w, r); pxDirty = false; followPx(); };
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
