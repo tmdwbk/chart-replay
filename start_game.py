@@ -4,7 +4,7 @@
 하는 일 (처음 한 번만 오래 걸림):
   1. 새 버전 확인: GitHub 의 최신 코드와 다르면 물어보고 코드 파일만 바꾼다 (data 폴더·차트 데이터는 그대로).
   2. 준비물(requests) 이 없으면 설치한다.
-  3. 차트 데이터(data/game, 약 40MB) 가 없으면 받는다. 새 버전에서 종목이 바뀌었으면 빠진 것만 더 받는다.
+  3. 차트 데이터(data/game, 1분봉 약 200MB) 가 없거나 예전 5분봉이면 받는다. 새 버전에서 종목이 바뀌었으면 빠진 것만 더 받는다.
   4. 이 컴퓨터 안에서만 보이는 작은 웹 서버를 켜고 브라우저로 차트게임을 연다.
 
 옵션:  --no-update  새 버전 확인 건너뛰기 · --no-browser  브라우저 안 열기 · --port 8765 · --lan  같은 와이파이의 휴대폰에서도 열기
@@ -139,10 +139,16 @@ def ensure_requests():
 # ---------------------------------------------------------------- 3. 차트 데이터
 def ensure_data(force_check):
     idx = HERE / "data" / "game" / "index.json"
+    try:                                           # 2026-11-24 5분봉 → 1분봉: 예전 데이터면 1분봉을 새로 받는다
+        if idx.exists() and json.loads(idx.read_text(encoding="utf-8")).get("interval") != "1m":
+            say("  차트가 1분봉으로 바뀌어서 데이터를 새로 받아요 (처음 한 번, 약 200MB·몇 분~십여 분).")
+            force_check = True
+    except Exception:
+        force_check = True
     if idx.exists() and not force_check:
         say("  차트 데이터가 이미 있어요.")
         return
-    say("  차트 데이터를 받아요. 처음엔 몇 분 걸려요 (약 40MB). 이미 받은 달은 건너뛰어요.")
+    say("  차트 데이터를 받아요. 처음엔 몇 분~십여 분 걸려요 (1분봉 약 200MB). 이미 받은 달은 건너뛰어요.")
     r = subprocess.run([sys.executable, str(HERE / "fetch_game.py")], cwd=str(HERE))
     if not idx.exists():
         raise SystemExit("[문제] 차트 데이터를 다 받지 못했어요. 인터넷 연결을 확인하고 다시 실행하면 받은 데까지는 건너뛰고 이어 받아요.")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""차트게임용 5분봉 받기.
+"""차트게임용 1분봉 받기 (2026-11-24 5분봉 → 1분봉).
 
 사용 예:
     python3 fetch_game.py            # 30종목 정해진 기간을 모두 받기(이미 받은 달은 건너뜀)
@@ -12,7 +12,7 @@
   그 달 파일이 없으면 바이비트 공개 시세 API(linear, 5분봉)로 받는다. 둘 다 없으면 그 달은 빠진다.
 - 공개 데이터 GET 요청만 쓴다. API 키·주문 기능은 없다.
 
-저장: data/game/<심볼>/<심볼>_5m_<UTC 연-월>.csv.gz  +  data/game/index.json (게임 화면이 읽는 목록)
+저장: data/game/<심볼>/<심볼>_1m_<UTC 연-월>.csv.gz  +  data/game/index.json (게임 화면이 읽는 목록)
 CSV 칸: ts_utc(초), open, high, low, close, volume, quote_volume, taker_buy_volume(바이낸스만)
 """
 
@@ -99,11 +99,11 @@ def utc_months(s, e):
 
 
 def month_path(sym, y, m):
-    return GAME_DIR / sym / f"{sym}_5m_{y}-{m:02d}.csv.gz"
+    return GAME_DIR / sym / f"{sym}_1m_{y}-{m:02d}.csv.gz"
 
 
 def fetch_binance_month(sym, y, m, workdir):
-    url = f"{BINANCE_ROOT}/monthly/klines/{sym}/5m/{sym}-5m-{y}-{m:02d}.zip"
+    url = f"{BINANCE_ROOT}/monthly/klines/{sym}/1m/{sym}-1m-{y}-{m:02d}.zip"
     chk = binance_get(url + ".CHECKSUM")
     if chk is None:
         return None
@@ -115,15 +115,15 @@ def fetch_binance_month(sym, y, m, workdir):
 
 
 def fetch_bybit_month(sym, y, m):
-    """바이비트 공개 시세(linear) 5분봉. 최신 → 과거 방향으로 1000개씩."""
+    """바이비트 공개 시세(linear) 1분봉. 최신 → 과거 방향으로 1000개씩 (한 달 약 45쪽)."""
     s = int(datetime(y, m, 1, tzinfo=timezone.utc).timestamp())
     e = int((datetime(y, m, calendar.monthrange(y, m)[1], tzinfo=timezone.utc) + timedelta(days=1)).timestamp())
     rows = {}
     end_ms = e * 1000 - 1
-    for _ in range(40):
+    for _ in range(60):
         for attempt in range(4):
             try:
-                r = SESSION.get(BYBIT_KLINE, params={"category": "linear", "symbol": sym, "interval": "5",
+                r = SESSION.get(BYBIT_KLINE, params={"category": "linear", "symbol": sym, "interval": "1",
                                                      "start": s * 1000, "end": end_ms, "limit": 1000}, timeout=30)
                 break
             except Exception as ex:  # 연결 오류만 다시 시도
@@ -241,8 +241,8 @@ def write_index():
         src_path = GAME_DIR / sym / "sources.json"
         sources = json.loads(src_path.read_text(encoding="utf-8")) if src_path.exists() else {}
         files = {}
-        for p in sorted((GAME_DIR / sym).glob(f"{sym}_5m_*.csv.gz")):
-            files[p.name.split("_5m_")[1][:7]] = f"game/{sym}/{p.name}"
+        for p in sorted((GAME_DIR / sym).glob(f"{sym}_1m_*.csv.gz")):
+            files[p.name.split("_1m_")[1][:7]] = f"game/{sym}/{p.name}"
         funding = {}
         for p in sorted((GAME_DIR / sym).glob(f"{sym}_funding_*.csv.gz")):
             funding[p.name.split("_funding_")[1][:7]] = f"game/{sym}/{p.name}"
@@ -263,7 +263,7 @@ def write_index():
             coins.append({"short": short, "name": ko, "symbol": sym, "periods": out})
     GAME_DIR.mkdir(parents=True, exist_ok=True)
     tmp = GAME_DIR / ".index.json.tmp"
-    tmp.write_text(json.dumps({"interval": "5m", "coins": coins, "missing": missing}, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.write_text(json.dumps({"interval": "1m", "coins": coins, "missing": missing}, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, GAME_DIR / "index.json")
     return coins, missing
 

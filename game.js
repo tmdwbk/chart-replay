@@ -1,13 +1,14 @@
 // 차트게임 모드 (replay.html?game). 리플레이 화면의 주문·포지션·기록 기능을 그대로 쓰고, 그 위에 게임 규칙만 얹는다.
-// - 거래량이 많았던 때의 주요 알트코인 30개 5분봉에서 랜덤으로 한 구간 (data/game/, fetch_game.py 로 받음)
+// - 거래량이 많았던 때의 주요 알트코인 30개 1분봉에서 랜덤으로 한 구간 (2026-11-24 5분봉 → 1분봉, 종목당 50턴 → 150턴) (data/game/, fetch_game.py 로 받음)
 // - 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 고정 · 격리 고정 · 실전 수수료 항상(메이커 0.02%/테이커 0.05%·펀딩·슬리피지)
-// - 종목 하나에 50턴(1턴 = 시작 화면, 다음 봉 하나 = 1턴), 새 종목은 5초 뒤에 넘길 수 있음
+// - 종목 하나에 TURNS턴(1턴 = 시작 화면, 다음 봉 하나 = 1턴), 새 종목은 5초 뒤에 넘길 수 있음
 // - 턴 동안 종목 이름·날짜는 가리고, 종목이 끝나면 공개
 // 가상 연습용. 실제 주문·API 키 없음.
 (function () {
   if (!GAME_MODE) return;
 
-  const SEED = 3000, TURNS = 50, PRE = 200, LOCK_MS = 5000, FEE_PCT = 0.02, LEV = 3, DEF_MARGIN = 1000;
+  const SEED = 3000, TURNS = 150, PRE = 200, LOCK_MS = 5000, FEE_PCT = 0.02, LEV = 3, DEF_MARGIN = 1000;
+  const BAR = 60, BAR_LABEL = '1분';      // 봉 길이(초)와 이름. 데이터(fetch_game.py)도 같은 길이여야 한다
   const STORE = 'chart-game-v3';          // v3: 리플레이 화면 기반(2026-11-19). 리플레이 연습 계좌와 따로
   let G = null;                           // 저장되는 게임 상태
   let index = null, starting = false, lockTimer = null;
@@ -60,7 +61,7 @@
     if (n <= 0) { stopPlay(); return; }
     origStep(n);
     G.round.turn = turnNow();
-    if (G.round.turn >= TURNS) endRound('50턴 끝');
+    if (G.round.turn >= TURNS) endRound(`${TURNS}턴 끝`);
     else { saveG(); renderTurn(); }
   };
   const origMarkers = renderMarkers;
@@ -76,7 +77,7 @@
     $('info').innerHTML =
       `<span><b>${dispSym()}</b> <span class="dim">${hidden() ? '종목·날짜는 종목이 끝나면 공개' : r.name + ' · ' + (r.sources || []).map((x) => (x === 'bybit' ? '바이비트' : x === 'gate' ? '게이트' : '바이낸스') + ' 선물').join('·') + (r.mine ? ' · 🔁 내 매매 차트' : '')}</span></span>` +
       `<span>턴 <b>${r.turn}/${TURNS}</b></span><span>지금 <b>${fmtKst(nowT())}</b> KST</span>` +
-      `<span>5분 봉 시 ${fmtP(a.o)} 고 ${fmtP(a.h)} 저 ${fmtP(a.l)} 종 <b class="${cls(ch)}">${fmtP(a.c)}</b> <span class="${cls(ch)}">${sgn(ch)}%</span></span>` +
+      `<span>${BAR_LABEL} 봉 시 ${fmtP(a.o)} 고 ${fmtP(a.h)} 저 ${fmtP(a.l)} 종 <b class="${cls(ch)}">${fmtP(a.c)}</b> <span class="${cls(ch)}">${sgn(ch)}%</span></span>` +
       `<span class="dim">거래대금 ${fmtBig(a.qv)} USDT</span>`;
   };
   const origBottom = renderBottom;
@@ -264,14 +265,14 @@
   const title = document.createElement('b'); title.textContent = '🎮 차트게임'; title.style.cssText = 'color:#fff;font-size:14px;margin:0 6px';
   bar.insertBefore(title, bar.children[1]);
   const rule = document.createElement('span'); rule.className = 'dim';
-  rule.textContent = '5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 지정가 수수료 0.02% · 종목당 50턴';
+  rule.textContent = `${BAR_LABEL}봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 지정가 수수료 0.02% · 종목당 ${TURNS}턴`;
   bar.appendChild(rule);
   const playTop = document.createElement('span'); playTop.id = 'gPlayTop';          // 맨 오른쪽 위: 전체 플레이타임 n.n시간
   playTop.title = '전체 플레이타임 (게임 화면을 보고 움직일 때만 셈)';
   playTop.style.cssText = 'margin-left:auto; color:#fff; font-weight:700; font-variant-numeric:tabular-nums; background:#232326; border:1px solid #3a3a40; border-radius:12px; padding:3px 12px';
   bar.appendChild(playTop);
   $('btnStep').textContent = '▶ 다음 봉'; $('btnStep').title = 'H 또는 →';
-  $('tf').value = '5'; tfSec = 300;
+  $('tf').value = String(BAR / 60); tfSec = BAR;
   $('unit').value = 'tf';
   // 레버리지·수수료 고정, 잔고 초기화 없음
   $('lev').value = LEV; $('lev').disabled = true; $('lev').title = '차트게임은 3배 고정';
@@ -318,14 +319,14 @@
   const avail = mk('div', 'gavail dim num'); avail.id = 'gAvail';
   const typeSeg = document.querySelector('#side .tabs'); typeSeg.classList.add('gseg');
   const pxWrap = $('pxBox').parentElement, mWrap = $('margin').closest('.inbox').parentElement, sliderWrap = $('mSlider').parentElement;
-  const keys = mk('div', 'gkeys', '<span><kbd>B</kbd> 매수</span><span><kbd>H</kbd> 다음</span><span><kbd>S</kbd> 매도</span><span><kbd>X</kbd> 청산</span><span><kbd>N</kbd> 다음종목</span>');
+  const keys = mk('div', 'gkeys', '<span><kbd>B</kbd> 매수</span><span><kbd>H</kbd> 다음</span><span><kbd>S</kbd> 매도</span><span><kbd>X</kbd> 청산</span><span><kbd>F</kbd> 다음종목</span>');
   const fixed = mk('div', 'dim gfixed', '격리 · 레버리지 3배 고정 · 수수료 지정가 0.02% · 가상 연습');
   orderCard.append(acts, pcts, avail, typeSeg, pxWrap, mWrap, $('tpslChk').closest('label'), $('roChk').closest('label'), $('tpslBox'), keys, fixed);
   const posCard = mk('div', 'gcard', '<div class="dim" style="margin-bottom:4px">포지션</div>');
   posCard.append($('pos'), $('posBtns'), $('pcBox'));
   const helpBox = mk('details', 'ghelp', '<summary>도움말</summary>');
   [...side.querySelectorAll('.help')].forEach((h) => helpBox.appendChild(h));
-  helpBox.querySelector('.help').insertAdjacentHTML('afterbegin', '<b style="color:#d4d4d8">차트게임</b>: 50턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요. 비중 = 주문 가능 현금 중 증거금으로 쓸 비율.<br>');
+  helpBox.querySelector('.help').insertAdjacentHTML('afterbegin', `<b style="color:#d4d4d8">차트게임</b>: ${TURNS}턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요. 비중 = 주문 가능 현금 중 증거금으로 쓸 비율.<br>`);
   // 안 쓰는 것 숨기기: 레버리지 칩 줄, 슬라이더, 최대 수량, 자산 제목·칸, 시작 잔고 줄, 원래 버튼 줄
   hideEl(document.querySelector('#side .otop')); hideEl(sliderWrap); hideEl($('maxL').closest('.row2')); hideEl(longParent);
   hideEl($('avail').closest('.row2')); hideEl($('orderHint').closest('.row2'));
@@ -496,7 +497,7 @@
   home.innerHTML = `<div class="card">
     <div class="ico" id="gHomeIco"></div><div class="tname" id="gHomeTier"></div><div class="ten" id="gHomeTen"></div>
     <div class="kick">CHART GAME</div><h1>차트게임</h1>
-    <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 5분봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 50턴, 시드 3,000 USDT로 시작해 계속 이어집니다.</p>
+    <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 ${BAR_LABEL}봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 ${TURNS}턴, 시드 3,000 USDT로 시작해 계속 이어집니다.</p>
     <div class="row"><span class="l">평가자산</span><span class="r num" id="gHomeEq">-</span></div>
     <div class="row"><span class="l">시드 대비</span><span class="r num" id="gHomeRoi">-</span></div>
     <div class="row"><span class="l">플레이타임</span><span class="r num" id="gHomePlay">-</span></div>
@@ -532,7 +533,7 @@
   const ymOf = (ts) => { const d = new Date(ts * 1000); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`; };
   // start = 1턴 봉 시각. 앞 200봉(1턴 봉 포함) + 뒤 49봉. 빈 곳이 많으면 null
   async function buildWindow(per, start) {
-    const from = start - (PRE - 1) * 300, to = start + (TURNS - 1) * 300;
+    const from = start - (PRE - 1) * BAR, to = start + (TURNS - 1) * BAR;
     if (from < per.start || to >= per.end) return null;
     const months = [...new Set([ymOf(from), ymOf(to)])];
     if (months.some((m) => !per.files[m])) return null;
@@ -555,27 +556,34 @@
   const minePick = (m) => ({ short: m.short, name: m.name, symbol: m.symbol, pk: 'mine', start: m.start, sources: m.sources, mine: m.id });
   const mineLeft = () => (mine ? mine.rounds.filter((r) => !(G.minePlayed || []).includes(r.id)) : []);
   async function pickRound() {
-    const left = mineLeft();
-    if (left.length && Math.random() < 0.5) {             // 새 종목 두 번에 한 번꼴로 내 매매 차트
-      const m = left[Math.floor(Math.random() * left.length)];
-      const w = await buildMyWindow(m).catch(() => null);
-      (G.minePlayed = G.minePlayed || []).push(m.id);
-      if (w) return { pick: minePick(m), w };
+    // 내 매매 판이 있으면 그것만 나온다 (모든 차트에 '그때 실전의 나' 고스트). 다 했으면 가장 덜 한 판부터 다시.
+    if (mine && mine.rounds && mine.rounds.length) {
+      const played = G.minePlayed || [], cnt = (id) => played.filter((x) => x === id).length;
+      const last = G.round && G.round.mine;
+      for (let tries = 0; tries < 6; tries++) {
+        const least = Math.min(...mine.rounds.map((r) => cnt(r.id)));
+        let pool = mine.rounds.filter((r) => cnt(r.id) === least && (mine.rounds.length < 2 || r.id !== last));
+        if (!pool.length) pool = mine.rounds;
+        const m = pool[Math.floor(Math.random() * pool.length)];
+        (G.minePlayed = played).push(m.id);
+        const w = await buildMyWindow(m).catch(() => null);
+        if (w) return { pick: minePick(m), w };
+      }
     }
-    return pickCoinRound();
+    return pickCoinRound();                          // 내 매매 판이 없는 컴퓨터(친구 등)는 원래 30종목
   }
   async function pickCoinRound() {
     const coins = index.coins, last = G.rounds.length ? G.rounds[G.rounds.length - 1] : null;
     for (let tries = 0; tries < 50; tries++) {
       const c = coins[Math.floor(Math.random() * coins.length)];
       if (last && coins.length > 1 && c.short === last.short && tries < 40) continue;   // 같은 종목 연달아 피하기
-      const spans = c.periods.map((p) => Math.max(0, (p.end - p.start) / 300 - PRE - TURNS));
+      const spans = c.periods.map((p) => Math.max(0, (p.end - p.start) / BAR - PRE - TURNS));
       const tot = spans.reduce((s, x) => s + x, 0);
       if (tot <= 0) continue;
       let r = Math.random() * tot, k = 0;
       while (k < spans.length - 1 && r >= spans[k]) { r -= spans[k]; k++; }
       const per = c.periods[k];
-      const start = per.start + (PRE - 1 + Math.floor(Math.random() * spans[k])) * 300;
+      const start = per.start + (PRE - 1 + Math.floor(Math.random() * spans[k])) * BAR;
       const w = await buildWindow(per, start);
       if (w) return { pick: { short: c.short, name: c.name, symbol: c.symbol, pk: k, start, sources: per.sources }, w };
     }
@@ -588,7 +596,7 @@
     bars = w.rows;
     meta = { symbol: 'GAME', real: r.symbol, market: '차트게임', quote: 'USDT', file: 'game' };
     months = []; loadedHi = -1; pend = null;
-    tfSec = 300; $('tf').value = '5';
+    tfSec = BAR; $('tf').value = String(BAR / 60);
     r.firstTurn = w.firstTurn;
     cursor = w.firstTurn + r.turn - 1;
     setGamePrecision(bars[w.firstTurn].c);
@@ -661,7 +669,7 @@
     const h = G.rounds[G.rounds.length - 1]; if (!h) return;
     const pct = h.pnl / h.startCash * 100;
     $('gResBody').innerHTML = `<div class="dim">${h.why} · 종목 공개</div><h2>${h.name} (${h.short})</h2>` +
-      `<div class="dim num">${origFmt(h.from)} ~ ${origFmt(h.to)} KST · 5분봉 · ${h.symbol}</div>` +
+      `<div class="dim num">${origFmt(h.from)} ~ ${origFmt(h.to)} KST · ${BAR_LABEL}봉 · ${h.symbol}</div>` +
       `<div class="bigp num ${cls(h.pnl)}">${usdS(h.pnl)} (${sgn(pct)}%)</div>` +
       `<div class="dim">포지션 ${h.entries}번${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 잔고 ${usd(h.endCash)} · 플레이 ${fmtDur(h.playMs || 0)}</div>` +
       (h.tierTo != null && h.tierTo !== h.tierFrom ? `<div style="margin-top:6px; color:${TIERS[h.tierTo].c1}; font-weight:700">${h.tierTo > h.tierFrom ? '티어 승급' : '티어 강등'}: ${TIERS[h.tierFrom].name} → ${TIERS[h.tierTo].name}</div>` : '') +
@@ -669,7 +677,7 @@
       ((h.ach || []).length ? `<div class="gresach">${h.ach.map((k) => { const a = ACH.find((x) => x.k === k); return a ? `<span>${a.ico} ${a.name}</span>` : ''; }).join('')}</div>` : '') +
       (h.daily ? `<div style="margin-top:8px; color:#f0b90b; font-weight:700">📅 오늘의 차트 완료</div>` : '') +
       mineLine(h) +
-      `<div><button id="gResNext">다음종목 (N)</button> <button id="gResRev" style="background:#232326">복기 보기</button>` +
+      `<div><button id="gResNext">다음종목 (F)</button> <button id="gResRev" style="background:#232326">복기 보기</button>` +
       (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button> <button id="gResGhost" style="background:#232326">👻 친구 고스트</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2c2c31">📅 오늘의 차트</button>` : '') + `</div>`;
     $('gResult').style.display = 'flex';
     countUp($('gResBody').querySelector('.bigp'), h.pnl, (v) => `${usdS(v)} (${sgn(v / h.startCash * 100)}%)`);
@@ -702,7 +710,7 @@
 
   // ------------------------------------------------------------ 복기 (체스 게임 리뷰처럼: 끝난 종목을 숫자로 돌아보기)
   // 가격 기준 %. 3배 레버리지 ROE 는 대략 ×3.
-  const POST_N = 10, GIVEBACK_MFE = 0.01;   // 청산 뒤 몇 턴을 볼지 · '한때 수익'으로 칠 폭(가격 +1%)
+  const POST_N = 30, GIVEBACK_MFE = 0.01;   // 청산 뒤 30봉(1분봉 = 30분)   // 청산 뒤 몇 턴을 볼지 · '한때 수익'으로 칠 폭(가격 +1%)
   function buildReview(r) {
     const a = r.firstTurn, b = Math.min(cursor, bars.length - 1), seg = bars.slice(a, b + 1);
     const c0 = seg[0].c;
@@ -731,7 +739,7 @@
       const post = after.length ? { fav: r4(postFav), adv: r4(postAdv), n: after.length } : null;
       if (t.x) { t.x.post = post; t.x.giveback = giveback; }            // 내보내기·전적에도 쓰도록 포지션 기록에 붙인다
       return { side: t.side, t_in: t.t_in, t_out: t.t_out, entry: t.entry, exit: t.exit, res, mfe, mae, cap: mfe > 0 ? res / mfe : null,
-        hold: Math.round((t.t_out - t.t_in) / 300), pnl: t.pnl, reason: t.reason, liq: t.liq, post, giveback };
+        hold: Math.round((t.t_out - t.t_in) / BAR), pnl: t.pnl, reason: t.reason, liq: t.liq, post, giveback };
     });
     const caps = list.filter((x) => x.cap != null && x.mfe > 0.002).map((x) => x.cap);
     const reached = list.filter((x) => x.mfe >= GIVEBACK_MFE);
@@ -764,7 +772,7 @@
         : '<div class="empty">이 종목에서는 포지션을 잡지 않았어요 (관망).</div>');
     if (cur) el.querySelectorAll('tr[data-i]').forEach((tr) => tr.onclick = () => {
       const t = rv.trades[+tr.dataset.i];
-      chart.timeScale().setVisibleRange({ from: t.t_in + KST_OFF - 25 * 300, to: t.t_out + KST_OFF + 25 * 300 });
+      chart.timeScale().setVisibleRange({ from: t.t_in + KST_OFF - 40 * BAR, to: t.t_out + KST_OFF + 40 * BAR });
     });
   }
 
@@ -773,12 +781,12 @@
   const ACH = [
     { k: 'first', ico: '🎯', name: '첫 포지션', desc: '포지션을 잡고 청산까지 해 보기', round: (c) => c.tr.length >= 1 },
     { k: 'firstwin', ico: '💵', name: '첫 수익', desc: '수익으로 청산하기', round: (c) => c.tr.some((t) => t.pnl > 0) },
-    { k: 'watch', ico: '👀', name: '관망도 실력', desc: '50턴 동안 진입 없이 종목 끝내기', round: (c) => !c.tr.length && c.h.turns >= TURNS },
-    { k: 'cool', ico: '🧊', name: '30분 룰', desc: '손실 청산 뒤 30분(6턴) 이상 쉬고 다시 진입하기 (한 종목 안에서, 손실 뒤 진입이 모두 6턴 이상 뒤)', round: (c) => {
+    { k: 'watch', ico: '👀', name: '관망도 실력', desc: `${TURNS}턴 동안 진입 없이 종목 끝내기`, round: (c) => !c.tr.length && c.h.turns >= TURNS },
+    { k: 'cool', ico: '🧊', name: '30분 룰', desc: '손실 청산 뒤 30분 이상 쉬고 다시 진입하기 (한 종목 안에서, 손실 뒤 진입이 모두 30분 이상 뒤)', round: (c) => {
       const tr = [...c.tr].sort((a, b) => a.t_in - b.t_in); let ok = false;
       for (let i = 0; i < tr.length - 1; i++) if (tr[i].pnl < 0) { if (tr[i + 1].t_in - tr[i].t_out < 1800) return false; ok = true; }
       return ok; } },
-    { k: 'patience', ico: '⏳', name: '버티기', desc: '수익 포지션을 10턴 이상 들고 수익 청산', round: (c) => c.tr.some((t) => t.pnl > 0 && t.t_out - t.t_in >= 3000) },
+    { k: 'patience', ico: '⏳', name: '버티기', desc: '수익 포지션을 30분 이상 들고 수익 청산', round: (c) => c.tr.some((t) => t.pnl > 0 && t.t_out - t.t_in >= 1800) },
     { k: 'limit', ico: '🧷', name: '지정가 장인', desc: '한 종목에서 체결된 주문이 모두 지정가 (2개 이상, 종목 끝 청산 없이)', round: (c) => {
       const f = orders.filter((o) => o.round === c.h.rid && o.status === '체결'); return f.length >= 2 && f.every((o) => /지정가/.test(o.kind)); } },
     { k: 'capture', ico: '🎣', name: '꼭대기 근처', desc: '포착률 70% 이상으로 수익 청산 (들고 있는 동안 0.5% 이상 움직였을 때)', round: (c) => c.rv.trades.some((t) => t.res > 0 && t.mfe > 0.005 && t.cap >= 0.7) },
@@ -838,17 +846,24 @@
     return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
   }
   async function pickDaily(day) {
+    if (mine && mine.rounds && mine.rounds.length) {      // 내 매매 판이 있으면 그중 하나 (날짜로 정해짐)
+      const rr = seeded('chart-game-daily-mine:' + day), list = [...mine.rounds].sort((a, b) => (a.id < b.id ? -1 : 1));
+      for (let tries = 0; tries < list.length; tries++) {
+        const m = list[Math.floor(rr() * list.length)], w = await buildMyWindow(m).catch(() => null);
+        if (w) return { pick: minePick(m), w };
+      }
+    }
     const rnd = seeded('chart-game-daily:' + day), coins = [...index.coins].sort((a, b) => (a.short < b.short ? -1 : 1));
     for (let tries = 0; tries < 60; tries++) {
       const c = coins[Math.floor(rnd() * coins.length)];
-      const spans = c.periods.map((p) => Math.max(0, (p.end - p.start) / 300 - PRE - TURNS));
+      const spans = c.periods.map((p) => Math.max(0, (p.end - p.start) / BAR - PRE - TURNS));
       const tot = spans.reduce((s, x) => s + x, 0);
       const u = rnd(), v = rnd();
       if (tot <= 0) continue;
       let r = u * tot, k = 0;
       while (k < spans.length - 1 && r >= spans[k]) { r -= spans[k]; k++; }
       const per = c.periods[k];
-      const start = per.start + (PRE - 1 + Math.floor(v * spans[k])) * 300;
+      const start = per.start + (PRE - 1 + Math.floor(v * spans[k])) * BAR;
       const w = await buildWindow(per, start);
       if (w) return { pick: { short: c.short, name: c.name, symbol: c.symbol, pk: k, start, sources: per.sources }, w };
     }
@@ -920,12 +935,12 @@
   function countUp(el, to, fmt, ms = 900) {
     const t0 = performance.now(); let done = false;
     const fin = () => { if (!done) { done = true; el.textContent = fmt(to); } };
-    (function f(now) { if (done) return; const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(to * e); if (k < 1) requestAnimationFrame(f); else fin(); })(t0);
+    (function f(now) { if (done) return; const k = Math.max(0, Math.min(1, (now - t0) / ms)), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(to * e); if (k < 1) requestAnimationFrame(f); else fin(); })(t0);
     setTimeout(fin, ms + 400);       // 화면이 가려져 있어도 마지막 값은 꼭 보이게
   }
 
   // ------------------------------------------------------------ 단축키 표 (? 키)
-  const KEYS = [['B', '매수 (롱)'], ['S', '매도 (숏)'], ['H 또는 →', '다음 봉 (1턴)'], ['Shift + →', '10봉'], ['Space', '재생 / 멈춤'], ['N', '다음종목 (5초 뒤)'],
+  const KEYS = [['B', '매수 (롱)'], ['S', '매도 (숏)'], ['H 또는 →', '다음 봉 (1턴)'], ['Shift + →', '10봉'], ['Space', '재생 / 멈춤'], ['F', '다음종목 (5초 뒤)'],
     ['X', '포지션 시장가 청산'], ['C', '전체 청산 (포지션 + 대기 주문 모두 취소)'], ['1 · 2 · 3 · 4', '증거금 비중 10 · 25 · 50 · 100%'], ['M', '효과음 켜기 / 끄기'],
     ['T', '전적 보기'], ['?', '이 표 열기 / 닫기'], ['Esc', '입력 칸 빠져나오기 · 창 닫기'], ['Alt + 글자', '그리기 도구']];
   const keyBox = document.createElement('div'); keyBox.id = 'gKeys'; keyBox.className = 'gmodal';
@@ -1029,7 +1044,7 @@
     return {
       rangePos: r4(hi > lo ? (c - lo) / (hi - lo) : 0.5),         // 최근 200봉 고저 안의 위치 (0 = 최저, 1 = 최고)
       fromHigh: r4(c / hi - 1), fromLow: r4(c / lo - 1),           // 200봉 최고·최저에서 떨어진 정도
-      ch1: r4(ch(1)), ch6: r4(ch(6)), ch12: r4(ch(12)), ch48: r4(ch(48)),   // 직전 5분·30분·1시간·4시간 변화
+      ch1: r4(ch(300 / BAR)), ch6: r4(ch(1800 / BAR)), ch12: r4(ch(3600 / BAR)), ch48: r4(ch(14400 / BAR)),   // 직전 5분·30분·1시간·4시간 변화 (봉 길이와 상관없이 시간으로)
       atr14: r4(tr14.length ? tr14.reduce((s, x) => s + x, 0) / tr14.length / c : null),   // 변동성 (14봉 평균 진폭 ÷ 가격)
       volX: r4(avgQv ? (last.qv || 0) / avgQv : avgV ? (last.v || 0) / avgV : null),        // 진입 봉 거래대금 ÷ 직전 48봉 평균
       takerBuy: r4(last.bv != null && last.v ? last.bv / last.v : null),                     // 진입 봉 매수 체결 비율
@@ -1045,7 +1060,7 @@
       pos.x = {
         v: LOG_VER, ctx: entryContext(), entryTurn: r ? r.turn : null, kind: orderType,
         decisionSec: pendingDecision, slEntry: ord.sl ?? null, tpEntry: ord.tp ?? null, slLog: [], tpLog: [], adds: [],
-        afterPrev: prev ? { turns: Math.round((t - prev.t_out) / 300), prevPnl: r4(prev.pnl), prevLoss: prev.pnl < 0, sizeRatio: r4(ord.margin / (prev.margin || ord.margin)) } : null,
+        afterPrev: prev ? { turns: Math.round((t - prev.t_out) / BAR), prevPnl: r4(prev.pnl), prevLoss: prev.pnl < 0, sizeRatio: r4(ord.margin / (prev.margin || ord.margin)) } : null,
         firstInRound: !prev, session: G.sess ? G.sess.id : null, hourKst: +origFmt(Math.floor(Date.now() / 1000)).slice(11, 13),
       };
       pos._sl = pos.sl ?? null; pos._tp = pos.tp ?? null;
@@ -1090,7 +1105,7 @@
       const riskUsd = riskPct != null ? riskPct * (open.fills && open.fills[0] ? open.fills[0].notional : tr.notional) : null;
       Object.assign(x, {
         mfe: r4(mfe), mae: r4(mae), res: r4(res), cap: mfe > 0 ? r4(res / mfe) : null,
-        holdTurns: Math.round((tr.t_out - tr.t_in) / 300), riskPct: r4(riskPct), R: riskUsd ? r4(tr.pnl / riskUsd) : null,
+        holdTurns: Math.round((tr.t_out - tr.t_in) / BAR), riskPct: r4(riskPct), R: riskUsd ? r4(tr.pnl / riskUsd) : null,
         slMoves: x.slLog.length, slAway: x.slLog.filter((z) => z.away).length, slRemoved: x.slLog.some((z) => z.removed),
         addsLosing: x.adds.filter((a) => a.losing).length, addsWinning: x.adds.filter((a) => !a.losing).length,
         exitTurn: G.round ? G.round.turn : null, balBefore: r4(acct.balance - tr.pnl), riskOfBal: r4(tr.pnl / Math.max(1, acct.balance - tr.pnl)),
@@ -1145,7 +1160,7 @@
     const day = origFmt(Math.floor(Date.now() / 1000)).slice(0, 10);
     const json = {
       app: 'chart-replay 차트게임', format: 'chart-game-analysis', version: LOG_VER, exportedAtKst: origFmt(Math.floor(Date.now() / 1000)),
-      rules: { seedUsdt: SEED, leverage: LEV, marginMode: '격리', feePct: FEE_PCT, turnsPerRound: TURNS, barSec: 300, preBars: PRE },
+      rules: { seedUsdt: SEED, leverage: LEV, marginMode: '격리', feePct: FEE_PCT, turnsPerRound: TURNS, barSec: BAR, preBars: PRE },
       notes: ['가격 % 는 소수 (0.01 = 1%)', 'R = 손익 ÷ 처음 손절까지의 손실액 (진입 때 손절가가 있을 때만)', 'ctx 는 진입 순간까지 보인 봉으로만 계산', '시각은 KST 문자열과 UTC 초를 함께'],
       account: { balance: acct.balance, tier: TIERS[rankNow()].name, series: G.series || null, seriesLog: G.seriesLog || [], bestTier: TIERS[G.bestTier || 0].name, playHours: r4((G.playMs || 0) / 3600000), achievements: Object.keys(G.ach || {}) },
       rounds: rs.map((h) => ({ ...h, review: h.review ? { ...h.review, trades: undefined } : null, fromKst: origFmt(h.from), toKst: origFmt(h.to) })),
@@ -1298,7 +1313,7 @@
   fixed.after(realBox);
   function paintReal() {
     fixed.textContent = '격리 · 레버리지 3배 고정 · 가상 연습';
-    rule.textContent = `5분봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 메이커 ${FEE_PCT}%·테이커 ${TAKER_PCT}%·펀딩·슬리피지 · 종목당 50턴`;
+    rule.textContent = `${BAR_LABEL}봉 · 시드 3,000 USDT · 레버리지 3배 · 격리 · 메이커 ${FEE_PCT}%·테이커 ${TAKER_PCT}%·펀딩·슬리피지 · 종목당 ${TURNS}턴`;
   }
 
   // ① 진입: 주문을 낸 그 자리에서 체결되면(시장가·바로 체결된 지정가) 테이커 + 슬리피지
@@ -1382,8 +1397,8 @@
   function applyFunding(fromClose, toClose) {   // (fromClose, toClose] 사이의 정산 시각 — 봉 종가 시각 기준
     if (!realOn() || !open || !fundList.length) return;
     for (const f of fundList) {
-      if (f.t <= fromClose || f.t > toClose || f.t <= open.t + 300) continue;
-      const bar = bars.find((b) => b.t + 300 >= f.t) || bars[cursor];
+      if (f.t <= fromClose || f.t > toClose || f.t <= open.t + BAR) continue;
+      const bar = bars.find((b) => b.t + BAR >= f.t) || bars[cursor];
       const v = (open.qty || open.notional / open.entry) * bar.c;      // 그 시각 포지션 가치
       const cost = (open.side === 'long' ? 1 : -1) * v * f.rate;        // 양수 = 낸 돈
       acct.balance = Math.max(0, acct.balance - cost); saveAcct();
@@ -1394,9 +1409,9 @@
   }
   const baseStepR = step;
   step = function (n) {
-    const before = cursor >= 0 && bars[cursor] ? bars[cursor].t + 300 : null;
+    const before = cursor >= 0 && bars[cursor] ? bars[cursor].t + BAR : null;
     baseStepR(n);
-    if (before != null && cursor >= 0 && bars[cursor]) { applyFunding(before, bars[cursor].t + 300); renderPos(); }
+    if (before != null && cursor >= 0 && bars[cursor]) { applyFunding(before, bars[cursor].t + BAR); renderPos(); }
   };
   // 포지션 기록에 펀딩비를 넣고, 실현 손익도 펀딩비까지 뺀 순손익으로 (잔고에는 정산 때 이미 반영)
   const baseTradeHookR = tradeHook;
@@ -1578,7 +1593,7 @@
 
   // ---- 고스트: 같은 차트 위에 반투명 B·S (내 매매 차트 = 그때 실제 나, 오늘의 차트 = 친구 코드)
   function myFillsCode(r) {                  // 오늘의 차트에서 내 체결을 짧은 코드로 (종목 이름·날짜는 안 넣음)
-    const f = orders.filter((o) => o.round === r.id && o.status === '체결' && o.ft != null).map((o) => [Math.round((o.ft - bars[r.firstTurn].t) / 300) + 1, o.dir === 'long' ? 'B' : 'S', +(+o.fp).toPrecision(7)]);
+    const f = orders.filter((o) => o.round === r.id && o.status === '체결' && o.ft != null).map((o) => [Math.round((o.ft - bars[r.firstTurn].t) / BAR) + 1, o.dir === 'long' ? 'B' : 'S', +(+o.fp).toPrecision(7)]);
     return 'CG1.' + btoa(unescape(encodeURIComponent(JSON.stringify({ d: r.daily, f })))).replace(/=+$/, '');
   }
   function parseGhost(code) {
@@ -1684,7 +1699,7 @@
     if ($('gHome').style.display !== 'none') return;
     const c = e.code;
     if (c === 'KeyH') { e.preventDefault(); step(1); }
-    else if (c === 'KeyN') { e.preventDefault(); if (G.round && (G.round.done || !$('gNext').disabled)) nextCoin(); }
+    else if (c === 'KeyF' || c === 'KeyN') { e.preventDefault(); if (G.round && (G.round.done || !$('gNext').disabled)) nextCoin(); }
     else if (c === 'KeyC') { e.preventDefault(); closeAll(); }
     else if (/^(Digit|Numpad)[1-4]$/.test(c)) { e.preventDefault(); const b = pcts.querySelector(`button[data-gp="${[10, 25, 50, 100][+c.slice(-1) - 1]}"]`); if (b) b.click(); }
   }, true);
@@ -1756,7 +1771,7 @@
   (async () => {
     try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
     try { mine = JSON.parse(await fetchText('data/game/my_index.json')); } catch (e) { mine = null; }   // 없으면 원래 30종목만
-    if (mine && mine.rounds && mine.rounds.length) $('gHomeNote').innerHTML += `<br>🔁 내 최근 매매 차트 ${mine.rounds.length}판이 섞여 나와요 (남은 ${mineLeft().length}판)`;
+    if (mine && mine.rounds && mine.rounds.length) $('gHomeNote').innerHTML += `<br>🔁 내가 매매한 차트 ${mine.rounds.length}판만 나와요 (모든 판에 그때 실전의 나 👻 고스트 · 아직 안 한 판 ${mineLeft().length}개)`;
     if (!index || !index.coins || !index.coins.length) {
       $('gGo').disabled = true; $('gDaily').disabled = true;
       // 왜 못 여는지 경우별로: 공개 사이트 링크 · 파일 더블클릭(file://) · 데이터를 아직 안 받음
