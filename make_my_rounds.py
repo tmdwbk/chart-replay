@@ -2,8 +2,8 @@
 """내 최근 매매로 차트게임 판 만들기 (내 컴퓨터에서만, 결과는 data/ 에 저장 = 커밋 안 됨).
 
 사용:
-    python3 make_my_rounds.py --db ~/scalp-journal/data/scalp.db          # 최근 30개
-    python3 make_my_rounds.py --db 경로 --n 50
+    python3 make_my_rounds.py --db ~/scalp-journal/data/scalp.db          # 전부 (시총 큰 종목·금 빼고)
+    python3 make_my_rounds.py --db 경로 --exclude INIT,AKE                   # 더 빼기
 
 - 매매일지 DB(position_close 표)를 '읽기 전용'으로 열어, 최근에 끝난 포지션마다 한 판을 만든다.
 - 판의 1턴 = 진입 30분 전. 앞 200봉 + 150턴 = 349개 1분봉을 게이트 공개 시세 API(GET, 키 없음)로 받는다 (2026-11-24 5분봉 → 1분봉).
@@ -29,6 +29,8 @@ OUT = HERE / "data" / "game" / "mine"
 INDEX = HERE / "data" / "game" / "my_index.json"
 GATE = "https://api.gateio.ws/api/v4/futures/usdt/candlesticks"
 PRE, TURNS, BAR = 200, 150, 60
+# 시총이 큰 종목·금은 뺀다 (2026-11-25 승주 결정: 잡알트 스캘핑 연습용). --include-all 로 끄고, --exclude 로 더 뺄 수 있음
+BIG_CAPS = {"BTC", "ETH", "XAU", "XAG", "PAXG", "PEPE", "DOGE", "HYPE", "SOL", "XRP", "BNB", "ADA", "TRX", "LINK", "AVAX", "SUI", "TON", "SHIB"}
 
 
 def say(m):
@@ -60,7 +62,9 @@ def bybit_candles(contract, frm, to):              # 게이트가 1분봉을 최
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True, help="매매일지 scalp.db 경로")
-    ap.add_argument("--n", type=int, default=30, help="최근 몇 개")
+    ap.add_argument("--n", type=int, default=500, help="최근 몇 개")
+    ap.add_argument("--exclude", default="", help="더 뺄 코인 (쉼표로, 예: INIT,AKE)")
+    ap.add_argument("--include-all", action="store_true", help="시총 큰 종목도 넣기")
     a = ap.parse_args()
     db = Path(os.path.expanduser(a.db))
     if not db.exists():
@@ -71,7 +75,13 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     now = int(time.time())
     out, skipped = [], 0
+    skip = set() if a.include_all else set(BIG_CAPS)
+    skip |= {x.strip().upper() for x in a.exclude.split(",") if x.strip()}
+    excluded = 0
     for t_close, contract, side, pnl, t_open, raw in rows:
+        if contract.replace("_USDT", "").upper() in skip:
+            excluded += 1
+            continue
         t_open, t_close = int(t_open), int(t_close)
         r = json.loads(raw)
         entry = float(r.get("long_price") if side == "long" else r.get("short_price") or 0) or None
@@ -112,7 +122,7 @@ def main():
     tmp = INDEX.with_name(".my_index.json.tmp")
     tmp.write_text(json.dumps({"rounds": out, "made": now}, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, INDEX)
-    say(f"완료: 내 매매 {len(out)}판 → {INDEX}" + (f" (아직 4시간이 안 지났거나 봉이 모자란 {skipped}개는 빠짐)" if skipped else ""))
+    say(f"완료: 내 매매 {len(out)}판 → {INDEX}" + (f" (시총 큰 종목 {excluded}개 뺌)" if excluded else "") + (f" (아직 시간이 안 지났거나 봉이 모자란 {skipped}개는 빠짐)" if skipped else ""))
 
 
 if __name__ == "__main__":
