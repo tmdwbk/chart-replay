@@ -1,6 +1,6 @@
 // 차트게임 모드 (replay.html?game). 리플레이 화면의 주문·포지션·기록 기능을 그대로 쓰고, 그 위에 게임 규칙만 얹는다.
 // - 거래량이 많았던 때의 주요 알트코인 30개 1분봉에서 랜덤으로 한 구간 (2026-11-24 5분봉 → 1분봉, 종목당 50턴 → 150턴) (data/game/, fetch_game.py 로 받음)
-// - 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 고정 · 격리 고정 · 실전 수수료 항상(메이커 0.02%/테이커 0.05%·펀딩·슬리피지)
+// - 시드 3,000 USDT 고정 · 잔고 초기화는 [↺ 시드 초기화] 버튼으로(2026-11-25) · 레버리지 3배 고정 · 격리 고정 · 실전 수수료 항상(메이커 0.02%/테이커 0.05%·펀딩·슬리피지)
 // - 종목 하나에 TURNS턴(1턴 = 시작 화면, 다음 봉 하나 = 1턴), 새 종목은 5초 뒤에 넘길 수 있음
 // - 턴 동안 종목 이름·날짜는 가리고, 종목이 끝나면 공개
 // 가상 연습용. 실제 주문·API 키 없음.
@@ -507,9 +507,10 @@
     <button class="go2" id="gDaily">📅 오늘의 차트</button>
     <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#232326">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#232326">⌨ 단축키 (?)</button></div>
     <button class="go2" id="gHomeGhost" style="background:#1f1f22">👻 친구 고스트 불러오기 (오늘의 차트)</button>
+    <button class="go2" id="gHomeReset" style="background:transparent; border:1px solid #3a3a40; color:#a1a1aa; font-weight:500">↺ 시드 초기화 (3,000 USDT로)</button>
     <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
       <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
-    <div class="note" id="gHomeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 · 격리</div></div>`;
+    <div class="note" id="gHomeNote">초기 시드 3,000 USDT · 레버리지 3배 · 격리</div></div>`;
   document.body.appendChild(home);
 
   // ------------------------------------------------------------ 데이터
@@ -1009,7 +1010,7 @@
     const roundsBy = {}; for (const r of rs) roundsBy[r.symbol] = (roundsBy[r.symbol] || 0) + 1;
     const symRows = Object.entries(bySym).map(([k, v]) => ({ k, v, s: statsOf(v) })).sort((p, q) => q.s.pnl - p.s.pnl);
     const why = {}; for (const t of tr) { const k = t.liq ? '강제청산' : ({ tp: '익절가', sl: '손절가', reduce: '지정가 청산', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason; why[k] = (why[k] || 0) + 1; }
-    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><span><button id="gExport" title="실력 분석용: JSON(전부) + CSV(포지션 한 줄씩)">⬇ 분석용 내보내기</button> <button data-x>닫기 (Esc)</button></span></div>` +
+    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><span><button id="gReset" title="잔고를 3,000 USDT로">↺ 시드 초기화</button> <button id="gExport" title="실력 분석용: JSON(전부) + CSV(포지션 한 줄씩)">⬇ 분석용 내보내기</button> <button data-x>닫기 (Esc)</button></span></div>` +
       `<div class="gscs">${card('끝낸 종목', rs.length)}${card('이긴 종목', rs.length ? pctS(rs.filter((x) => x.pnl > 0).length / rs.length) : '-')}${card('포지션', a.n)}${card('포지션 승률', a.n ? pctS(a.win) : '-')}` +
       `${card('평균 손익비', a.rr != null ? a.rr.toFixed(2) : '-')}${card('포지션당 기대값', a.n ? usdS(a.exp) : '-', cls(a.exp))}${card('총 실현 손익', usdS(a.pnl), cls(a.pnl))}${card('낸 수수료', usd(fees))}` +
       `${card('최다 연승 / 연패', `${best} / ${worst}`)}${card('최대 낙폭 (종목 끝 잔고)', mdd ? '-' + (mdd * 100).toFixed(1) + '%' : '0%', mdd ? 'down' : '')}${card('플레이타임', fmtDur(G.playMs || 0))}${card('업적', `${ACH.filter((x) => (G.ach || {})[x.k]).length}/${ACH.length}`)}</div>` +
@@ -1024,6 +1025,7 @@
       `<div class="dim" style="font-size:11.5px; margin-top:8px">손익비 = 평균 수익 ÷ 평균 손실 · 기대값 = 포지션 하나당 평균 손익 · 진행 중인 종목의 포지션은 종목 이름이 드러나지 않게 종목이 끝난 뒤에 셉니다.</div></div>`;
     statBox.querySelector('[data-x]').onclick = () => { statBox.style.display = 'none'; };
     $('gExport').onclick = () => exportData();
+    $('gReset').onclick = () => resetSeed();
   }
   const openStats = () => { if (statBox.style.display === 'flex') { statBox.style.display = 'none'; return; } renderStats(); openModal(statBox); };
   // 위 막대에 버튼: 전적 · 단축키 · 소리
@@ -1771,6 +1773,19 @@
   $('gHomeStats').onclick = () => openStats();
   $('gHomeKeys').onclick = () => toggleKeys();
   $('gHomeGhost').onclick = () => importGhost();
+  $('gHomeReset').onclick = () => resetSeed();
+  // 시드 초기화 (2026-11-25 승주 요청): 잔고 3,000 · 티어 아이언 · 승급전·연승/연패 처음부터. 하던 종목은 버리고 새로.
+  // 지난 기록(종목·포지션·주문 기록, 업적, 플레이타임, 시즌 기록)은 그대로 두고, 초기화한 때를 기록에 남긴다.
+  function resetSeed() {
+    if (!confirm(`시드를 ${SEED.toLocaleString()} USDT로 초기화할까요?\n\n· 잔고 ${usd(acct.balance)} → ${usd(SEED)}\n· 티어 ${TIERS[rankNow()].name} → ${TIERS[0].name}, 진행 중인 승급전·연승 기록도 처음부터\n· 하던 종목(들고 있는 포지션·대기 주문 포함)은 버리고 새로 시작\n· 지난 종목·포지션 기록, 업적, 플레이타임은 그대로 남아요\n\n되돌릴 수 없어요.`)) return;
+    (G.resets = G.resets || []).push({ at: Date.now(), balance: acct.balance, rank: rankNow() });
+    for (const o of orders) if (o.status === '대기') o.status = '취소';
+    open = null; pendEntry = null; reduces = [];
+    acct.balance = SEED; acct.start = SEED;
+    G.rank = 0; G.series = null; G.seriesCool = 0; G.streakW = 0; G.streakL = 0; G.round = null;
+    saveG();
+    location.reload();
+  }
   $('gDaily').onclick = async () => {
     if (!index) return;
     const ds = dailyState();
