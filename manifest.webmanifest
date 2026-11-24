@@ -1,0 +1,11 @@
+{
+  "name": "차트게임",
+  "short_name": "차트게임",
+  "start_url": "game.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

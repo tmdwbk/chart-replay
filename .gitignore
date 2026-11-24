@@ -5,3 +5,4 @@ screenshot*.png
 screenshot*.jpg
 data/
 .chart-game-version
+*.app/

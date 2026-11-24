@@ -7,7 +7,7 @@
   3. 차트 데이터(data/game, 약 40MB) 가 없으면 받는다. 새 버전에서 종목이 바뀌었으면 빠진 것만 더 받는다.
   4. 이 컴퓨터 안에서만 보이는 작은 웹 서버를 켜고 브라우저로 차트게임을 연다.
 
-옵션:  --no-update  새 버전 확인 건너뛰기 · --no-browser  브라우저 안 열기 · --port 8765
+옵션:  --no-update  새 버전 확인 건너뛰기 · --no-browser  브라우저 안 열기 · --port 8765 · --lan  같은 와이파이의 휴대폰에서도 열기
 
 공개 데이터 GET 요청만 쓴다. API 키·주문 기능은 없다.
 """
@@ -192,7 +192,16 @@ def stale_server(port):                            # 그 포트에서 다른 차
         return False
 
 
-def serve(port, open_browser):
+def lan_ip():                                       # 같은 와이파이의 휴대폰이 들어올 이 컴퓨터 주소 (패킷은 안 보냄)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            return s.getsockname()[0]
+    except Exception:
+        return None
+
+
+def serve(port, open_browser, lan=False):
     url = f"http://127.0.0.1:{port}/game.html"
     # 같은 주소(포트)를 써야 브라우저에 저장된 게임 기록(잔고·티어)이 이어진다. 그래서 예전 창이 켜져 있으면 닫게 한다
     while not port_free(port) and not served_by_this_folder(port) and stale_server(port):
@@ -217,11 +226,15 @@ def serve(port, open_browser):
                 break
         else:
             raise SystemExit(f"[문제] {port}~{port + 19} 포트가 모두 사용 중이에요. 컴퓨터를 다시 켠 뒤 실행해 주세요.")
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0" if lan else "127.0.0.1", port), Handler)
     say("")
     say("=" * 56)
     say("  차트게임이 켜졌어요.")
     say(f"  주소: {url}")
+    if lan:
+        ip = lan_ip()
+        say(f"  📱 휴대폰(같은 와이파이): http://{ip}:{port}/game.html" if ip else "  📱 이 컴퓨터의 와이파이 주소를 찾지 못했어요")
+        say("     같은 와이파이에 있는 기기는 누구나 이 주소로 게임 파일을 볼 수 있어요. 집 와이파이에서만 쓰세요.")
     say("  브라우저가 안 열리면 위 주소를 주소창에 붙여 넣으세요.")
     say("  이 창을 닫으면 게임이 꺼져요. 게임하는 동안 켜 두세요.")
     say("=" * 56)
@@ -258,7 +271,7 @@ def main():
     say("[3/4] 차트 데이터 확인")
     ensure_data(force_check=updated)
     say("[4/4] 게임 켜기")
-    serve(port, "--no-browser" not in args)
+    serve(port, "--no-browser" not in args, lan="--lan" in args)
 
 
 if __name__ == "__main__":

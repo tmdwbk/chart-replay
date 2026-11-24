@@ -110,6 +110,8 @@
     #gHome .card { width:390px; background:linear-gradient(180deg, #1a1a1d 0%, #141416 55%); border:1px solid #2a2a2e; border-radius:28px; padding:34px 26px 26px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.45); }
     #gHome .ico { width:140px; height:140px; margin:0 auto 14px; border-radius:50%; background:radial-gradient(circle, #2a2a2e 0%, #161618 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
     #gHome .ico svg { width:118px; height:118px; filter:drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
+    .temb { display:inline-block; flex:none; } .temb.tchal { animation:tchal 2.4s ease-in-out infinite; }
+    @keyframes tchal { 50% { transform:scale(1.05); } }
     #gHome .kick { color:#a1a1aa; letter-spacing:.22em; font-weight:700; font-size:12px; }
     #gHome h1 { color:#fff; font-size:22px; margin:8px 0 10px; }
     #gHome p { color:#a1a1aa; line-height:1.6; margin:0 0 20px; font-size:13.5px; }
@@ -211,6 +213,22 @@
     .sd.w { background:#1f7a4d; border-color:#3ddc97; } .sd.l { background:#8a2b2b; border-color:#ff6b6b; }
     .gach.bad { border-color:#ef535088; } .gach.go { border-color:#9a9aa2; }
     .gmine { margin-top:8px; padding:6px 10px; border:1px solid #3f3f46; border-radius:8px; background:#141416; font-size:12.5px; }
+    #gStreak { font-size:12px; font-weight:800; color:#ffb74d; white-space:nowrap; }
+    #chartRow.gglow { box-shadow: inset 0 0 calc(30px + 60px * var(--glow, .3)) rgba(61,220,151, calc(.15 + .45 * var(--glow, .3))); }
+    #gTimer { font-weight:800; font-variant-numeric:tabular-nums; color:#e4e4e7; min-width:38px; text-align:right; }
+    #gTimer.hot { color:#ff6b6b; animation:gPulse .5s ease-in-out infinite alternate; }
+    @keyframes gPulse { from { transform:scale(1); } to { transform:scale(1.18); } }
+    .gtopb.on { background:#3f3f46; color:#fff; border-color:#71717a; }
+    #gPromoBar { position:absolute; left:50%; top:8px; transform:translateX(-50%); z-index:7; display:none; align-items:center; gap:6px; padding:5px 12px; border-radius:20px;
+      background:rgba(20,10,14,.88); border:1px solid #7f1d1d; font-size:12.5px; white-space:nowrap; box-shadow:0 0 18px rgba(239,83,80,.35); }
+    body.gpromo #chartRow { box-shadow: inset 0 0 90px rgba(170,40,60,.32); }
+    body.gpromo .gcard { border-color:#4a2a30; }
+    .fxBig { position:absolute; left:50%; top:42%; transform:translate(-50%,-50%); text-align:center; z-index:9; animation:fxBig 1.8s cubic-bezier(.2,1.3,.4,1) forwards; text-shadow:0 4px 24px rgba(0,0,0,.8); pointer-events:none; }
+    .fxBig .t { font-size:72px; font-weight:900; letter-spacing:.06em; } .fxBig .s { font-size:16px; font-weight:700; color:#e4e4e7; }
+    .fxBig.w .t { color:#3ddc97; } .fxBig.l .t { color:#ff5252; } .fxBig.d .t { color:#a1a1aa; }
+    @keyframes fxBig { 0% { transform:translate(-50%,-50%) scale(2.2); opacity:0; } 18% { transform:translate(-50%,-50%) scale(1); opacity:1; } 80% { opacity:1; } 100% { transform:translate(-50%,-62%) scale(.96); opacity:0; } }
+    .fbadge.ghost { opacity:.55; outline:1px dashed rgba(255,255,255,.7); font-size:9px; }
+    .sring { display:inline-flex; border-radius:50%; padding:2px; box-shadow:0 0 0 2px var(--rc), 0 0 12px var(--rc); }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -372,7 +390,7 @@
     const t = TIERS[i], nx = TIERS[i + 1], bal = acct.balance, se = G.series;
     const pct = nx ? Math.max(0, Math.min(100, (bal - t.min) / (nx.min - t.min) * 100)) : 100;
     let sub;
-    if (se) sub = `<div class="gseries"><b style="color:${TIERS[se.to].c1}">${TIERS[se.to].name} 승급전</b> ${seriesDots(se)}</div><div class="dim" style="font-size:11px">${seriesText(se)} · 판당 +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배</div>`;
+    if (se) sub = `<div class="gseries"><b style="color:${TIERS[se.to].c1}">${TIERS[se.to].name} 승급전</b> ${seriesDots(se)}</div><div class="dim" style="font-size:11px">${seriesText(se)} · 판당 +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배 · 잔고 고정</div>`;
     else if (nx && bal >= nx.min && G.seriesCool > 0) sub = `<div class="dim" style="font-size:11.5px">승급전 다시 도전까지 매매 <b>${G.seriesCool}</b>번</div>`;
     else sub = `<div class="dim" style="font-size:11.5px">${nx ? `${nx.name} 승급전 (${usd(nx.min).replace('.00', '')})까지 ${usd(Math.max(0, nx.min - bal))} 남음` : '최고 티어'}</div>` +
       `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div>`;
@@ -386,18 +404,23 @@
   // tr: 방금 끝난 포지션 기록(승급전 한 판). 없으면 강등·시작만 확인
   function updateRank(tr) {
     let rank = rankNow();
-    const bal = acct.balance;
-    // 1. 강등: 지금 티어 기준 아래로 내려가면 바로
-    if (rank > 0 && bal < TIERS[rank].min) {
+    let bal = acct.balance;
+    // 1. 강등: 지금 티어 기준 아래로 내려가면 바로 (승급전 중엔 잔고가 고정이라 강등 없음)
+    if (!G.series && rank > 0 && bal < TIERS[rank].min) {
       while (rank > 0 && bal < TIERS[rank].min) rank--;
       if (G.series) { logSeries('cancel'); G.series = null; }
       G.rank = rank; tierToast(rank, false); sfx('tierDown'); saveG();
       return;
     }
-    // 2. 승급전 한 판
-    if (G.series && tr) {
+    // 2. 승급전 한 판 (승급전이 시작되기 전에 연 포지션이 끝난 건 판으로 안 세고, 그때 잔고를 고정 기준으로)
+    if (G.series && tr && G.series.bal == null) G.series.bal = acct.balance;
+    else if (G.series && tr) {
       const se = G.series, res = tr.pnl >= SERIES_WIN_USDT ? 'W' : tr.pnl < 0 ? 'L' : 'D';
+      // 승급전 판은 잔고에 반영하지 않는다 (2026-11-24 승주 결정): 시작할 때 잔고로 되돌린다. 기록엔 '승급전' 표시
+      if (se.bal != null) { acct.balance = se.bal; bal = se.bal; tr.balance = se.bal; }
+      tr.series = { to: se.to, res };
       se.games.push(res);
+      try { promoFx(res, se); } catch (e) { console.error(e); }
       if (res === 'W') se.w++; else if (res === 'L') se.l++;
       if (se.w >= SERIES_WINS) {
         logSeries('win'); const to = se.to; G.series = null; G.seriesCool = 0;
@@ -412,16 +435,12 @@
         seriesToast(`<span class="ai">${lab[0]}</span><div><div class="dim" style="font-size:11px">${TIERS[se.to].name} 승급전</div><b class="${lab[2]}">${lab[1]} ${usdS(tr.pnl)}</b><div class="dim" style="font-size:11.5px">${seriesText(se)}</div></div>`);
       }
     } else if (tr && G.seriesCool > 0) G.seriesCool--;
-    // 3. 승급전 중 잔고가 기준 아래로 → 취소
-    if (G.series && bal < TIERS[G.series.to].min) {
-      const se = G.series; logSeries('cancel'); G.series = null;
-      seriesToast(`<span class="ai">⚠️</span><div><div class="dim" style="font-size:11px">승급전 취소</div><b>잔고가 ${TIERS[se.to].name} 기준(${usd(TIERS[se.to].min)}) 아래로 내려갔어요</b></div>`, 'bad');
-    }
+    if (G.series && G.series.bal == null && !(open && !tr)) G.series.bal = acct.balance;
     // 4. 승급전 시작
     if (!G.series && rank < TIERS.length - 1 && bal >= TIERS[rank + 1].min && !(G.seriesCool > 0)) {
-      G.series = { to: rank + 1, w: 0, l: 0, games: [], start: Date.now() };
+      G.series = { to: rank + 1, w: 0, l: 0, games: [], start: Date.now(), bal: open ? null : acct.balance };   // 포지션을 들고 있으면 그 포지션이 끝난 뒤 잔고로
       const t = TIERS[rank + 1];
-      seriesToast(`<span class="ai">⚔️</span><div><div class="dim" style="font-size:11px">승급전 시작</div><b style="color:${t.c1}">${t.name} 승급전 — 5판 중 3승</b><div class="dim" style="font-size:11.5px">포지션 하나를 끝까지 청산하면 한 판. +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배, 그 사이는 무승부</div></div>`, 'go');
+      seriesToast(`<span class="ai">⚔️</span><div><div class="dim" style="font-size:11px">승급전 시작</div><b style="color:${t.c1}">${t.name} 승급전 — 5판 중 3승</b><div class="dim" style="font-size:11.5px">포지션 하나를 끝까지 청산하면 한 판. +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배, 그 사이는 무승부. <b>승급전 판은 잔고에 반영되지 않아요.</b></div></div>`, 'go');
       sfx('ach');
     }
     G.rank = rank;
@@ -486,6 +505,7 @@
     <button class="go" id="gGo">게임 시작</button>
     <button class="go2" id="gDaily">📅 오늘의 차트</button>
     <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#232326">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#232326">⌨ 단축키 (?)</button></div>
+    <button class="go2" id="gHomeGhost" style="background:#1f1f22">👻 친구 고스트 불러오기 (오늘의 차트)</button>
     <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
       <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
     <div class="note" id="gHomeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 · 격리</div></div>`;
@@ -623,7 +643,7 @@
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
     try { roundExtra(r, h); } catch (e) { console.error(e); }
     if (r.daily) G.daily[r.daily] = { done: true, pct: pctOf(h) * 100, entries: mine.length, cap: h.review ? h.review.avgCap : null,
-      emoji: mine.map((t) => (t.liq ? '💥' : t.pnl > 0 ? '🟩' : '🟥')).join('').slice(0, 40), short: r.short };
+      emoji: mine.map((t) => (t.liq ? '💥' : t.pnl > 0 ? '🟩' : '🟥')).join('').slice(0, 40), short: r.short, ghost: myFillsCode(r) };
     renderTier();
     h.ach = checkAch({ h, r, tr: mine, rv: h.review || { trades: [] } }).concat(checkAch()).map((a) => a.k);
     saveG();
@@ -650,12 +670,13 @@
       (h.daily ? `<div style="margin-top:8px; color:#f0b90b; font-weight:700">📅 오늘의 차트 완료</div>` : '') +
       mineLine(h) +
       `<div><button id="gResNext">다음종목 (N)</button> <button id="gResRev" style="background:#232326">복기 보기</button>` +
-      (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2c2c31">📅 오늘의 차트</button>` : '') + `</div>`;
+      (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button> <button id="gResGhost" style="background:#232326">👻 친구 고스트</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2c2c31">📅 오늘의 차트</button>` : '') + `</div>`;
     $('gResult').style.display = 'flex';
     countUp($('gResBody').querySelector('.bigp'), h.pnl, (v) => `${usdS(v)} (${sgn(v / h.startCash * 100)}%)`);
     $('gResNext').onclick = () => startRound();
     $('gResRev').onclick = () => { $('gResult').style.display = 'none'; openTab('review'); };
     if ($('gResShare')) $('gResShare').onclick = () => copyDaily(h.daily);
+    if ($('gResGhost')) $('gResGhost').onclick = () => importGhost();
     if ($('gResDaily')) $('gResDaily').onclick = () => startDaily();
   }
   function nextCoin() {
@@ -847,7 +868,8 @@
   function dailyText(d) {
     const x = G.daily[d]; if (!x || !x.done) return '';
     return `📈 차트게임 · 오늘의 차트 ${d.slice(5).replace('-', '/')}\n결과 ${x.pct >= 0 ? '+' : ''}${x.pct.toFixed(2)}% ${x.emoji || '⬜'}\n` +
-      `포지션 ${x.entries}번${x.cap != null ? ` · 평균 포착률 ${Math.round(x.cap * 100)}%` : ''} · ${TIERS[rankNow()].name}`;
+      `포지션 ${x.entries}번${x.cap != null ? ` · 평균 포착률 ${Math.round(x.cap * 100)}%` : ''} · ${TIERS[rankNow()].name}` +
+      (x.ghost ? `\n👻 고스트 코드 (차트게임에서 [👻 친구 고스트]에 붙여 넣기): ${x.ghost}` : '');
   }
   async function copyDaily(d) {
     const t = dailyText(d); if (!t) return;
@@ -1223,7 +1245,7 @@
       // 캔들을 가리지 않게: B 는 그 봉 저가 아래, S 는 고가 위에 (체결 가격은 올리면 보임)
       const a = barAt.get(g.t), x = chart.timeScale().timeToCoordinate(g.t + KST_OFF);
       const edge = a ? candle.priceToCoordinate(g.dir === 'long' ? a.l : a.h) : candle.priceToCoordinate(g.price);
-      const y = edge == null ? null : edge + (g.dir === 'long' ? 17 : -17);   // 배지 반 높이(7.5) + 띄움(약 10px)
+      const y = edge == null ? null : edge + (g.dir === 'long' ? 17 : -17) + (g.ghost ? (g.dir === 'long' ? 19 : -19) : 0);   // 배지 반 높이(7.5) + 띄움(약 10px)
       if (x == null || y == null || x < 0 || x > W || y < 0 || y > H) { g.el.style.display = 'none'; continue; }
       g.el.style.display = ''; g.el.style.left = x + 'px'; g.el.style.top = y + 'px';
     }
@@ -1445,6 +1467,212 @@
   const baseShowWindowPx = showWindow;
   showWindow = function (w, r) { baseShowWindowPx(w, r); pxDirty = false; followPx(); };
 
+  // ============================================================ 2026-11-24 추가: 봉 애니메이션 · 연승/연패 · 승급전 화면 · 10초 모드 · 고스트 · 시즌 · 진동
+  // ---- 봉이 그려지는 애니메이션: 다음 봉 한 개를 열 때 0.3초 동안 시가에서 고가·저가를 오가다 종가로
+  let animTok = 0, animBar = null;
+  function finishAnim() { if (animBar) { try { candle.update(toCandle(animBar)); } catch (e) {} animBar = null; animTok++; } }
+  function animateLast() {
+    if (reduceMotion || !agg.length) return;
+    const a = agg[agg.length - 1], tok = ++animTok;
+    animBar = a;
+    const up = a.c >= a.o, mid1 = a.o + (a.c - a.o) * 0.3;
+    const pts = [a.o, up ? a.l : a.h, mid1, up ? a.h : a.l, a.o + (a.c - a.o) * 0.7, a.c];   // 꼬리 끝을 한 번씩 찍고 종가로
+    const frames = 10, per = 30;
+    let k = 0, hi = a.o, lo = a.o;
+    (function f() {
+      if (tok !== animTok) return;
+      const x = (k / frames) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x)), v = pts[i] + (pts[i + 1] - pts[i]) * (x - i);
+      hi = Math.max(hi, v); lo = Math.min(lo, v);
+      try { candle.update({ time: a.t + KST_OFF, open: a.o, high: hi, low: lo, close: v }); } catch (e) {}
+      if (++k <= frames) setTimeout(f, per); else finishAnim();
+    })();
+  }
+
+  // ---- 연승·연패 (포지션을 끝까지 청산한 매매 기준, 종목 끝 자동 청산 제외)
+  const streakChip = document.createElement('div'); streakChip.id = 'gStreak'; $('gTurn').appendChild(streakChip);
+  function paintStreak() {
+    const w = G ? (G.streakW || 0) : 0;
+    streakChip.textContent = w >= 2 ? `🔥 ${w}연승` : '';
+    streakChip.style.display = w >= 2 ? '' : 'none';
+    const row = $('chartRow');
+    row.classList.toggle('gglow', w >= 2);
+    row.style.setProperty('--glow', String(Math.min(1, 0.25 + (w - 2) * 0.18)));
+  }
+  let restUntil = 0;
+  const restBox = document.createElement('div'); restBox.id = 'gRest'; restBox.className = 'gmodal'; document.body.appendChild(restBox);
+  function showRest(n) {
+    restUntil = Date.now() + 5000;
+    restBox.innerHTML = `<div class="gm" style="text-align:center; max-width:360px"><div style="font-size:42px">🧊</div><h3 style="margin:6px 0">${n}연패 — 쉬어가기</h3>` +
+      `<div class="dim" style="line-height:1.6">연달아 지면 판단이 흔들리기 쉬워요. 실전 원칙처럼 잠깐 쉬고, 이 종목은 관망하거나 다음 종목으로 넘겨 보세요.</div>` +
+      `<div id="gRestCount" style="margin:10px 0; font-weight:700">5초 뒤에 주문할 수 있어요</div><button data-x>알겠어요</button></div>`;
+    restBox.style.display = 'flex';
+    restBox.querySelector('[data-x]').onclick = () => { restBox.style.display = 'none'; };
+    const t = setInterval(() => {
+      const left = Math.ceil((restUntil - Date.now()) / 1000), el = $('gRestCount');
+      if (!el) { clearInterval(t); return; }
+      if (left <= 0) { el.textContent = '이제 주문할 수 있어요'; clearInterval(t); } else el.textContent = `${left}초 뒤에 주문할 수 있어요`;
+    }, 250);
+  }
+  const baseSubmitRest = submit;
+  submit = function (side) {
+    if (Date.now() < restUntil) { flash(`쉬어가는 중이에요. ${Math.ceil((restUntil - Date.now()) / 1000)}초 뒤에 주문할 수 있어요.`, 2000); return; }
+    return baseSubmitRest(side);
+  };
+  const baseTradeHookStreak = tradeHook;
+  tradeHook = function (tr) {
+    baseTradeHookStreak(tr);
+    if (!isTrade(tr) || tr.reason === 'round' || tr.series) return;     // 승급전 판은 따로 셈
+    if (tr.pnl > 0) { G.streakW = (G.streakW || 0) + 1; G.streakL = 0; }
+    else { G.streakL = (G.streakL || 0) + 1; G.streakW = 0; if (G.streakL >= 2) setTimeout(() => showRest(G.streakL), 900); }
+    paintStreak();
+  };
+
+  // ---- 승급전 화면: 배경·배너·음악, 판마다 큰 승·패 연출
+  const promoBar = document.createElement('div'); promoBar.id = 'gPromoBar'; $('chartRow').appendChild(promoBar);
+  function paintPromo() {
+    const se = G && G.series, on = !!(se && G.round && !G.round.done);
+    document.body.classList.toggle('gpromo', !!se);
+    promoBar.style.display = se ? 'flex' : 'none';
+    if (se) promoBar.innerHTML = `<span>⚔️</span><b style="color:${TIERS[se.to].c1}">${TIERS[se.to].name} 승급전</b> ${seriesDots(se)} <span class="dim">${seriesText(se)} · 잔고는 그대로</span>`;
+    promoMusic(on);
+  }
+  function promoFx(res, se) {
+    const big = document.createElement('div');
+    big.className = 'fxBig ' + (res === 'W' ? 'w' : res === 'L' ? 'l' : 'd');
+    const done = res === 'W' && se.w + 1 >= SERIES_WINS ? '승급!' : res === 'L' && se.l + 1 > SERIES_GAMES - SERIES_WINS ? '승급 실패' : '';
+    big.innerHTML = `<div class="t">${res === 'W' ? '승리' : res === 'L' ? '패배' : '무승부'}</div><div class="s">${done || (res === 'D' ? '판수에 안 셈' : `${TIERS[se.to].name} 승급전`)}</div>`;
+    fx.appendChild(big); setTimeout(() => big.remove(), 1900);
+  }
+  let musicTimer = null, musicStep = 0;
+  function promoMusic(on) {
+    if (on && sndOn && !musicTimer) {
+      const notes = [220, 262, 330, 262, 196, 247, 294, 247];            // 낮고 긴장감 있는 반복 (직접 만든 소리)
+      musicTimer = setInterval(() => {
+        if (!sndOn || document.hidden || !actx) return;
+        try { tone(notes[musicStep % notes.length], 0.22, 'triangle', 0.035); if (musicStep % 4 === 0) tone(notes[musicStep % notes.length] / 2, 0.4, 'sine', 0.05); } catch (e) {}
+        musicStep++;
+      }, 260);
+    } else if ((!on || !sndOn) && musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  }
+
+  // ---- 10초 모드: 턴마다 10초 안에 판단, 지나면 저절로 다음 봉
+  const TURN_SEC = 10;
+  let turnStart = Date.now(), lastTurnSeen = -1;
+  const timerEl = document.createElement('div'); timerEl.id = 'gTimer'; $('gTurn').appendChild(timerEl);
+  const timerBtn = document.createElement('button'); timerBtn.className = 'gtopb'; timerBtn.id = 'gTimerBtn';
+  bar.insertBefore(timerBtn, $('gStatBtn'));
+  function paintTimerBtn() { timerBtn.textContent = G && G.timer ? `⏱ ${TURN_SEC}초 모드 켜짐` : `⏱ ${TURN_SEC}초 모드`; timerBtn.classList.toggle('on', !!(G && G.timer)); }
+  timerBtn.onclick = () => { G.timer = !G.timer; turnStart = Date.now(); saveG(); paintTimerBtn(); timerBtn.blur(); flash(G.timer ? `${TURN_SEC}초 모드: 턴마다 ${TURN_SEC}초가 지나면 저절로 다음 봉으로 넘어가요.` : '10초 모드를 껐어요.', 2500); };
+  setInterval(() => {
+    if (!G) return;
+    const r = G.round, active = G.timer && r && !r.done && !starting && $('gHome').style.display === 'none' && $('gResult').style.display !== 'flex' &&
+      ![...document.querySelectorAll('.gmodal')].some((m) => m.style.display === 'flex') && !document.hidden;
+    if (!r || r.turn !== lastTurnSeen) { lastTurnSeen = r ? r.turn : -1; turnStart = Date.now(); }
+    if (!active) { timerEl.style.display = 'none'; turnStart = Math.max(turnStart, Date.now() - (TURN_SEC - 1) * 1000 * 0); return; }
+    const left = TURN_SEC - (Date.now() - turnStart) / 1000;
+    timerEl.style.display = '';
+    timerEl.textContent = `⏱ ${Math.max(0, Math.ceil(left))}`;
+    timerEl.classList.toggle('hot', left <= 3);
+    if (left <= 0) { turnStart = Date.now(); step(1); }
+  }, 200);
+
+  // ---- 고스트: 같은 차트 위에 반투명 B·S (내 매매 차트 = 그때 실제 나, 오늘의 차트 = 친구 코드)
+  function myFillsCode(r) {                  // 오늘의 차트에서 내 체결을 짧은 코드로 (종목 이름·날짜는 안 넣음)
+    const f = orders.filter((o) => o.round === r.id && o.status === '체결' && o.ft != null).map((o) => [Math.round((o.ft - bars[r.firstTurn].t) / 300) + 1, o.dir === 'long' ? 'B' : 'S', +(+o.fp).toPrecision(7)]);
+    return 'CG1.' + btoa(unescape(encodeURIComponent(JSON.stringify({ d: r.daily, f })))).replace(/=+$/, '');
+  }
+  function parseGhost(code) {
+    const m = String(code).trim().match(/CG1\.([A-Za-z0-9+/]+)/);
+    if (!m) return null;
+    try { const j = JSON.parse(decodeURIComponent(escape(atob(m[1])))); return j && j.d && Array.isArray(j.f) ? j : null; } catch (e) { return null; }
+  }
+  function importGhost() {
+    const code = prompt('친구가 보낸 오늘의 차트 결과 글(👻 CG1. 으로 시작하는 줄 포함)을 붙여 넣으세요');
+    if (!code) return;
+    const g = parseGhost(code);
+    if (!g) { flash('고스트 코드를 찾지 못했어요. 👻 CG1. 로 시작하는 부분이 들어 있어야 해요.', 3500); return; }
+    const name = (prompt('누구의 고스트인가요? (이름)', '친구') || '친구').slice(0, 12);
+    G.ghosts = G.ghosts || {};
+    (G.ghosts[g.d] = G.ghosts[g.d] || []).push({ name, f: g.f });
+    saveG(); renderHome && renderHome();
+    flash(`${g.d} 오늘의 차트에 ${name} 고스트를 넣었어요 (체결 ${g.f.length}번). 그 날짜 오늘의 차트를 하면 같이 보여요.`, 4000);
+  }
+  function ghostsNow() {                     // 지금 판에서 '이미 지난' 고스트 체결
+    const r = G && G.round; if (!r || cursor < 0 || !bars.length) return [];
+    const out = [], tNow = nowT();
+    if (r.mine && mine) {
+      const m = mine.rounds.find((x) => x.id === r.mine), t = m && m.trade;
+      if (t) {
+        const long = t.side === 'long';
+        out.push({ who: '그때 실전의 나', t: bucket(t.open), dir: long ? 'long' : 'short', price: t.entry, act: '진입' });
+        out.push({ who: '그때 실전의 나', t: bucket(t.close), dir: long ? 'short' : 'long', price: t.exit, act: '청산' });
+      }
+    }
+    if (r.daily && G.ghosts && G.ghosts[r.daily]) for (const g of G.ghosts[r.daily]) for (const [turn, d, p] of g.f) {
+      const b = bars[r.firstTurn + turn - 1]; if (b) out.push({ who: g.name, t: b.t, dir: d === 'B' ? 'long' : 'short', price: p, act: '' });
+    }
+    return out.filter((x) => x.t <= tNow && x.price);
+  }
+  const baseBuildFills = buildFills;
+  buildFills = function () {
+    const gs = ghostsNow();
+    baseBuildFills();
+    fillLayer.querySelectorAll('.fbadge.ghost').forEach((e) => e.remove());
+    fillGroups = fillGroups.filter((g) => !g.ghost);
+    for (const x of gs) {
+      const el = document.createElement('div');
+      el.className = 'fbadge ghost ' + (x.dir === 'long' ? 'b' : 's');
+      el.textContent = '👻';
+      el.title = `${x.who} ${x.dir === 'long' ? '매수' : '매도'}${x.act ? ' (' + x.act + ')' : ''} @ ${fmtP(x.price)} · ${fmtKst(x.t).slice(11)}`;
+      fillLayer.appendChild(el);
+      fillGroups.push({ t: x.t, dir: x.dir, price: x.price, list: [], el, ghost: true });
+    }
+  };
+
+  // ---- 시즌: KST 달마다. 그 달 가장 높이 오른 티어를 기억하고, 다음 시즌엔 그 색 테두리(보상)를 엠블럼에
+  function seasonId() { return todayKst().slice(0, 7); }
+  function seasonTick() {
+    if (!G) return;
+    const id = seasonId(), r = rankNow();
+    if (!G.season) G.season = { id, best: r };
+    else if (G.season.id !== id) {
+      (G.seasonHist = G.seasonHist || []).push(G.season);
+      const prev = G.season;
+      G.season = { id, best: r };
+      seriesToast(`<span class="ai">🏆</span><div><div class="dim" style="font-size:11px">새 시즌 ${id}</div><b>지난 시즌(${prev.id}) 최고 ${TIERS[prev.best].name}</b><div class="dim" style="font-size:11.5px">보상: ${TIERS[prev.best].name} 테두리를 엠블럼에 달아 줘요</div></div>`, 'go');
+    } else G.season.best = Math.max(G.season.best, r);
+  }
+  const ringOf = () => { const h = G && G.seasonHist && G.seasonHist.length ? G.seasonHist[G.seasonHist.length - 1] : null; return h ? TIERS[h.best] : null; };
+  const baseTierBlock = tierBlock;
+  tierBlock = function (i, size) {
+    const out = baseTierBlock(i, size), ring = ringOf(), cut = out.indexOf('>') + 1;   // 맨 앞의 엠블럼 그림 한 개
+    const ss = G && G.season ? `<div class="dim" style="font-size:10.5px">시즌 ${G.season.id.slice(5)}월 최고 <b style="color:${TIERS[G.season.best].c1}">${TIERS[G.season.best].name}</b></div>` : '';
+    const svgPart = ring ? `<span class="sring" style="--rc:${ring.c1}" title="지난 시즌 보상 테두리 (${ring.name})">${out.slice(0, cut)}</span>` : out.slice(0, cut);
+    return svgPart + out.slice(cut).replace(/<\/div>$/, ss + '</div>');
+  };
+
+  // ---- 진동 (휴대폰에서): 체결·수익·손실·강제청산·승급
+  const VIB = { fill: 15, win: [30, 40, 30], loss: 120, liq: [200, 80, 200], tierUp: [40, 40, 40, 40, 120], tierDown: 150, ach: 30 };
+  const baseSfxV = sfx;
+  sfx = function (name) { baseSfxV(name); try { if (navigator.vibrate && matchMedia('(pointer: coarse)').matches && VIB[name]) navigator.vibrate(VIB[name]); } catch (e) {} };
+
+  // ---- 한 턴마다: 애니메이션·고스트·승급전 화면·시즌
+  const baseStepFx = step;
+  step = function (n) {
+    finishAnim();
+    const before = agg.length;
+    baseStepFx(n);
+    if (n === 1 && agg.length > before) animateLast();
+    renderMarkers();
+    paintPromo();
+  };
+  const baseRenderTierFx = renderTier;
+  renderTier = function () { seasonTick(); baseRenderTierFx(); paintPromo(); };
+  const baseShowWindowFx = showWindow;
+  showWindow = function (w, r) { baseShowWindowFx(w, r); paintStreak(); paintPromo(); paintTimerBtn(); };
+  paintTimerBtn();
+  window.addEventListener('tiers-local', () => { tierDrawn = null; try { renderTier(); renderHome(); } catch (e) {} });   // 내 엠블럼 그림을 찾으면 다시 그림
+
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && closeModals()) { e.preventDefault(); return; }
@@ -1516,6 +1744,7 @@
   };
   $('gHomeStats').onclick = () => openStats();
   $('gHomeKeys').onclick = () => toggleKeys();
+  $('gHomeGhost').onclick = () => importGhost();
   $('gDaily').onclick = async () => {
     if (!index) return;
     const ds = dailyState();

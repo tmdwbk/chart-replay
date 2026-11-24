@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <title>차트 리플레이 연습</title>
 <script src="lib/lightweight-charts.standalone.production.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0b0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="차트게임">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<script>
+// 휴대폰 홈 화면에 앱처럼 설치 (보안 연결일 때만 서비스 워커가 켜짐)
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 <script>
 // 차트 리플레이 화면은 2026-11-24에 없앴다. 이 주소는 차트게임만 연다 (?game 없이 와도 차트게임으로)
 if (!new URLSearchParams(location.search).has('game')) location.replace('replay.html?game' + location.search.replace(/^\?/, '&'));
