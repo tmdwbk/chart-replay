@@ -1485,7 +1485,9 @@
   // ============================================================ 2026-11-24 추가: 봉 애니메이션 · 연승/연패 · 승급전 화면 · 10초 모드 · 고스트 · 시즌 · 진동
   // ---- 봉이 그려지는 애니메이션: 다음 봉 한 개를 열 때 0.3초 동안 시가에서 고가·저가를 오가다 종가로
   let animTok = 0, animBar = null;
-  function finishAnim() { if (animBar) { try { candle.update(toCandle(animBar)); } catch (e) {} animBar = null; animTok++; } }
+  // 애니메이션 중인 봉이 아직 차트의 마지막 봉일 때만 마무리한다. 종목이 바뀐 뒤 예전 종목 봉을 새 차트에 붙이던 버그(2026-11-25)
+  function finishAnim() { if (animBar) { if (agg[agg.length - 1] === animBar) { try { candle.update(toCandle(animBar)); } catch (e) {} } animBar = null; animTok++; } }
+  function cancelAnim() { animBar = null; animTok++; }
   function animateLast() {
     if (reduceMotion || !agg.length) return;
     const a = agg[agg.length - 1], tok = ++animTok;
@@ -1495,7 +1497,7 @@
     const frames = 10, per = 30;
     let k = 0, hi = a.o, lo = a.o;
     (function f() {
-      if (tok !== animTok) return;
+      if (tok !== animTok || agg[agg.length - 1] !== a) return;   // 종목이 바뀌었거나 새 봉이 열렸으면 멈춤
       const x = (k / frames) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(x)), v = pts[i] + (pts[i + 1] - pts[i]) * (x - i);
       hi = Math.max(hi, v); lo = Math.min(lo, v);
       try { candle.update({ time: a.t + KST_OFF, open: a.o, high: hi, low: lo, close: v }); } catch (e) {}
@@ -1684,7 +1686,7 @@
   const baseRenderTierFx = renderTier;
   renderTier = function () { seasonTick(); baseRenderTierFx(); paintPromo(); };
   const baseShowWindowFx = showWindow;
-  showWindow = function (w, r) { baseShowWindowFx(w, r); paintStreak(); paintPromo(); paintTimerBtn(); };
+  showWindow = function (w, r) { cancelAnim(); baseShowWindowFx(w, r); paintStreak(); paintPromo(); paintTimerBtn(); };
   paintTimerBtn();
   window.addEventListener('tiers-local', () => { tierDrawn = null; try { renderTier(); renderHome(); } catch (e) {} });   // 내 엠블럼 그림을 찾으면 다시 그림
 
