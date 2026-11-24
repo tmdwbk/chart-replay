@@ -910,24 +910,8 @@
     f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = vol;
     src.buffer = buf; src.connect(f).connect(g).connect(actx.destination); src.start();
   }
-  // 필터를 고를 수 있는 잡음 (금속 '철컥'·서랍 미끄러짐 등에 씀)
-  function noiseF(dur, vol, type, freq, delay = 0, q = 1) {
-    const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.5);
-    const src = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
-    f.type = type; f.frequency.value = freq; f.Q.value = q; g.gain.value = vol;
-    src.buffer = buf; src.connect(f).connect(g).connect(actx.destination); src.start(actx.currentTime + delay);
-  }
   const SOUNDS = {
-    // 체결: 포스기 현금 서랍이 '철컥' 열리며 '띵' (직접 만든 소리. 게이트 음원을 쓰지 않음)
-    fill: () => {
-      noiseF(0.025, 0.55, 'highpass', 2500);                  // 잠금쇠 철컥
-      tone(140, 0.06, 'sine', 0.22, 0, 0.6);                   // 쿵
-      noiseF(0.11, 0.22, 'bandpass', 700, 0.02, 0.9);          // 서랍 미끄러짐
-      noiseF(0.03, 0.45, 'highpass', 1800, 0.13);              // 끝에 탁
-      tone(110, 0.08, 'sine', 0.2, 0.13, 0.7);
-      tone(2093, 0.45, 'sine', 0.09, 0.15); tone(3136, 0.35, 'sine', 0.05, 0.15); tone(4186, 0.2, 'sine', 0.025, 0.15);   // 띵
-    },
+    fill: () => { tone(1800, 0.04, 'square', 0.06); tone(1200, 0.05, 'square', 0.04, 0.03); },              // 딸깍 (체결) — 2026-11-25 원래 소리로 되돌림
     win: () => { tone(1046, 0.18, 'sine', 0.14); tone(1568, 0.35, 'sine', 0.12, 0.09); },                     // 띵 (수익 청산)
     loss: () => { tone(160, 0.22, 'sine', 0.25, 0, 0.5); },                                                  // 쿵 (손실 청산)
     liq: () => { noise(0.5, 0.35); tone(90, 0.5, 'sawtooth', 0.12, 0, 0.4); },                               // 펑 (강제청산)
