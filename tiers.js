@@ -26,19 +26,21 @@ const TIER_IMG = [
   { f: 'rank-diamond-0.png', css: 'filter:hue-rotate(150deg) saturate(1.35) drop-shadow(0 0 8px rgba(255,80,80,.6))' },    // 그랜드마스터 (빨강)
   { f: 'rank-gold-0.png', css: 'filter:saturate(1.2) drop-shadow(0 0 10px rgba(255,220,120,.85)) drop-shadow(0 0 22px rgba(120,200,255,.45))', cls: 'tchal' }, // 챌린저
 ];
-// 내 그림으로 바꾸기: data/tiers/<key>.png (iron·bronze·silver·gold·platinum·diamond·master·grandmaster·challenger) 가 있으면 그걸 먼저 쓴다.
+// 내 그림으로 바꾸기: data/tiers/<key>.png 또는 .webp (iron·bronze·silver·gold·platinum·diamond·master·grandmaster·challenger) 가 있으면 그걸 먼저 쓴다.
 // data/ 는 GitHub 에 올라가지 않으니 이 컴퓨터에서만 보인다. 처음에 한 번 있는지 확인하고, 있으면 화면을 다시 그리게 알린다.
 const TIER_LOCAL = {};
 (async () => {
   if (location.protocol === 'file:') return;
   let found = false;
   await Promise.all(TIERS.map(async (t) => {
-    try { const r = await fetch(`data/tiers/${t.key}.png`, { method: 'HEAD', cache: 'no-store' }); if (r.ok) { TIER_LOCAL[t.key] = true; found = true; } } catch (e) {}
+    for (const ext of ['png', 'webp', 'jpg']) {
+      try { const r = await fetch(`data/tiers/${t.key}.${ext}`, { method: 'HEAD', cache: 'no-store' }); if (r.ok) { TIER_LOCAL[t.key] = ext; found = true; break; } } catch (e) {}
+    }
   }));
   if (found) window.dispatchEvent(new Event('tiers-local'));
 })();
 function tierSvg(i, size = 64) {   // 이름은 예전 그대로(여러 곳에서 씀). 이제 그림 파일을 쓴다
   const t = TIERS[i], m = TIER_IMG[i];
-  if (TIER_LOCAL[t.key]) return `<img class="temb" src="data/tiers/${t.key}.png" width="${size}" height="${size}" alt="${t.name}" style="object-fit:contain" draggable="false">`;
+  if (TIER_LOCAL[t.key]) return `<img class="temb" src="data/tiers/${t.key}.${TIER_LOCAL[t.key]}" width="${size}" height="${size}" alt="${t.name}" style="object-fit:contain" draggable="false">`;
   return `<img class="temb ${m.cls || ''}" src="img/tiers/${m.f}" width="${size}" height="${size}" alt="${t.name}" style="${m.css}; object-fit:contain" draggable="false">`;
 }

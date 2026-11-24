@@ -910,8 +910,24 @@
     f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = vol;
     src.buffer = buf; src.connect(f).connect(g).connect(actx.destination); src.start();
   }
+  // 필터를 고를 수 있는 잡음 (금속 '철컥'·서랍 미끄러짐 등에 씀)
+  function noiseF(dur, vol, type, freq, delay = 0, q = 1) {
+    const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.5);
+    const src = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+    f.type = type; f.frequency.value = freq; f.Q.value = q; g.gain.value = vol;
+    src.buffer = buf; src.connect(f).connect(g).connect(actx.destination); src.start(actx.currentTime + delay);
+  }
   const SOUNDS = {
-    fill: () => { tone(1800, 0.04, 'square', 0.06); tone(1200, 0.05, 'square', 0.04, 0.03); },              // 딸깍 (체결)
+    // 체결: 포스기 현금 서랍이 '철컥' 열리며 '띵' (직접 만든 소리. 게이트 음원을 쓰지 않음)
+    fill: () => {
+      noiseF(0.025, 0.55, 'highpass', 2500);                  // 잠금쇠 철컥
+      tone(140, 0.06, 'sine', 0.22, 0, 0.6);                   // 쿵
+      noiseF(0.11, 0.22, 'bandpass', 700, 0.02, 0.9);          // 서랍 미끄러짐
+      noiseF(0.03, 0.45, 'highpass', 1800, 0.13);              // 끝에 탁
+      tone(110, 0.08, 'sine', 0.2, 0.13, 0.7);
+      tone(2093, 0.45, 'sine', 0.09, 0.15); tone(3136, 0.35, 'sine', 0.05, 0.15); tone(4186, 0.2, 'sine', 0.025, 0.15);   // 띵
+    },
     win: () => { tone(1046, 0.18, 'sine', 0.14); tone(1568, 0.35, 'sine', 0.12, 0.09); },                     // 띵 (수익 청산)
     loss: () => { tone(160, 0.22, 'sine', 0.25, 0, 0.5); },                                                  // 쿵 (손실 청산)
     liq: () => { noise(0.5, 0.35); tone(90, 0.5, 'sawtooth', 0.12, 0, 0.4); },                               // 펑 (강제청산)
@@ -919,9 +935,18 @@
     tierDown: () => [392, 330, 262].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, i * 0.1)),
     ach: () => { tone(1318, 0.12, 'sine', 0.1); tone(1760, 0.3, 'sine', 0.1, 0.08); },                       // 업적
   };
+  // 내 소리 파일로 바꾸기: data/sounds/<이름>.mp3·wav·ogg·m4a (fill 체결, win 수익, loss 손실, liq 강제청산, tierUp, tierDown, ach)
+  // data/ 는 GitHub 에 올라가지 않아 이 컴퓨터에서만 들린다.
+  const SND_FILE = {};
+  (async () => {
+    for (const n of Object.keys(SOUNDS)) for (const ext of ['mp3', 'wav', 'ogg', 'm4a']) {
+      try { const r = await fetch(`data/sounds/${n}.${ext}`, { method: 'HEAD', cache: 'no-store' }); if (r.ok) { SND_FILE[n] = new Audio(`data/sounds/${n}.${ext}`); break; } } catch (e) {}
+    }
+  })();
   function sfx(name) {
     if (!sndOn || !SOUNDS[name]) return;
     const now = performance.now(); if (now - lastSnd < 40 && name === 'fill') return; lastSnd = now;
+    if (SND_FILE[name]) { try { const a = SND_FILE[name].cloneNode(); a.volume = 0.8; a.play().catch(() => {}); } catch (e) {} return; }
     try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); SOUNDS[name](); } catch (e) {}
   }
   function setSound(on) { sndOn = on; localStorage.setItem(SND_KEY, on ? 'on' : 'off'); $('gSnd').textContent = on ? '🔊' : '🔇'; $('gSnd').title = `효과음 ${on ? '켜짐' : '꺼짐'} (M)`; if (on) sfx('fill'); }
