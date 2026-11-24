@@ -13,8 +13,8 @@ const DRAW_TOOLS = {
 };
 const DRAW_GROUPS = { line: ['trend', 'ray', 'ext', 'hline', 'hray', 'vline'], fib: ['fib', 'channel'], brush: ['brush', 'hl', 'arrow', 'rect', 'ellipse'], text: ['text'], icon: ['icon'] };
 const EMOJIS = ['🚀', '🔥', '💰', '🎯', '📌', '⭐', '✅', '❌', '⚠️', '❓', '💡', '👍', '👎', '😀', '😎', '🤔', '😱', '😡', '😭', '😂'];
-const SWATCH = ['#2962ff', '#f23645', '#089981', '#ff9800', '#e040fb', '#ffeb3b', '#d1d4dc'];
-const FIB = [[0, '#787b86'], [0.236, '#f23645'], [0.382, '#ff9800'], [0.5, '#4caf50'], [0.618, '#089981'], [0.786, '#00bcd4'], [1, '#787b86'], [1.618, '#2962ff']];
+const SWATCH = ['#52525b', '#f23645', '#089981', '#ff9800', '#e040fb', '#ffeb3b', '#d4d4d8'];
+const FIB = [[0, '#787b86'], [0.236, '#f23645'], [0.382, '#ff9800'], [0.5, '#4caf50'], [0.618, '#089981'], [0.786, '#00bcd4'], [1, '#787b86'], [1.618, '#52525b']];
 const DICON = {
   trend: '<path d="M7.5 20.5l13-13"/><circle cx="6" cy="22" r="2"/><circle cx="22" cy="6" r="2"/>',
   ray: '<path d="M7.5 20.5L25 3"/><circle cx="6" cy="22" r="2"/><circle cx="15" cy="13" r="2"/>',
@@ -212,7 +212,7 @@ function shape(d) {
     }
     case 'text': {
       const fs = 10 + w * 3, [x, y] = P[0], tw = textW(d.text || ' ', fs);
-      s.svg += `<text x="${x}" y="${y}" font-size="${fs}" fill="${c}" stroke="#131722" stroke-width="3" paint-order="stroke">${escH(d.text || '')}</text>`;
+      s.svg += `<text x="${x}" y="${y}" font-size="${fs}" fill="${c}" stroke="#0b0b0c" stroke-width="3" paint-order="stroke">${escH(d.text || '')}</text>`;
       s.boxes.push([x - 3, y - fs, tw + 6, fs * 1.3]);
       s.handles = [];
       break;
@@ -273,21 +273,21 @@ function renderDraw() {
         const xs = [], ys = [];
         for (const g of s.segs) { xs.push(g[0], g[2]); ys.push(g[1], g[3]); }
         for (const b of s.boxes) { xs.push(b[0], b[0] + b[2]); ys.push(b[1], b[1] + b[3]); }
-        if (xs.length) h += `<rect x="${Math.min(...xs) - 4}" y="${Math.min(...ys) - 4}" width="${Math.max(...xs) - Math.min(...xs) + 8}" height="${Math.max(...ys) - Math.min(...ys) + 8}" fill="none" stroke="#2962ff" stroke-dasharray="3 3"/>`;
+        if (xs.length) h += `<rect x="${Math.min(...xs) - 4}" y="${Math.min(...ys) - 4}" width="${Math.max(...xs) - Math.min(...xs) + 8}" height="${Math.max(...ys) - Math.min(...ys) + 8}" fill="none" stroke="#52525b" stroke-dasharray="3 3"/>`;
       }
-      for (const [x, y] of s.handles) h += `<circle cx="${x}" cy="${y}" r="5" fill="#131722" stroke="#2962ff" stroke-width="1.5"/>`;
+      for (const [x, y] of s.handles) h += `<circle cx="${x}" cy="${y}" r="5" fill="#0b0b0c" stroke="#52525b" stroke-width="1.5"/>`;
     }
   }
   if (measure) h += measureSvg();
   if (zoomBox) {
     const a = xy(zoomBox.a), b = xy(zoomBox.b);
-    if (a && b) h += `<rect x="${Math.min(a[0], b[0])}" y="${Math.min(a[1], b[1])}" width="${Math.abs(a[0] - b[0])}" height="${Math.abs(a[1] - b[1])}" fill="rgba(41,98,255,.12)" stroke="#2962ff" stroke-dasharray="4 3"/>`;
+    if (a && b) h += `<rect x="${Math.min(a[0], b[0])}" y="${Math.min(a[1], b[1])}" width="${Math.abs(a[0] - b[0])}" height="${Math.abs(a[1] - b[1])}" fill="rgba(41,98,255,.12)" stroke="#52525b" stroke-dasharray="4 3"/>`;
   }
   svg.innerHTML = h + '</g>';
 }
 function measureSvg() {                       // 측정: 가격 차이(%), 봉 수·기간, 그동안 거래대금
   const a = xy(measure.a), b = xy(measure.b); if (!a || !b) return '';
-  const up = measure.b.p >= measure.a.p, col = up ? '#2962ff' : '#f23645';
+  const up = measure.b.p >= measure.a.p, col = up ? '#52525b' : '#f23645';
   const x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]), rw = Math.abs(a[0] - b[0]), rh = Math.abs(a[1] - b[1]);
   const la = tToL(measure.a.t), lb = tToL(measure.b.t), nb = Math.round(lb - la);
   let qv = 0;
@@ -493,7 +493,7 @@ function drawWants(e) {                       // 이 클릭을 그리기 쪽이 
 function lockPan() { if (!panLocked) { chart.applyOptions({ handleScroll: false, handleScale: false }); panLocked = true; } }
 function unlockPan() { if (panLocked) { chart.applyOptions({ handleScroll: true, handleScale: true }); panLocked = false; } }
 function newDraw(type, pts) {
-  const color = type === 'text' ? '#d1d4dc' : type === 'hl' ? '#ffeb3b' : type === 'brush' ? '#f23645' : '#2962ff';
+  const color = type === 'text' ? '#d4d4d8' : type === 'hl' ? '#ffeb3b' : type === 'brush' ? '#f23645' : '#52525b';
   return { type, pts, color, width: 2, tf: tfSec, text: type === 'icon' ? emoji : '' };
 }
 function finishDraw(d) {

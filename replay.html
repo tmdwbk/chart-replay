@@ -5,19 +5,23 @@
 <title>차트 리플레이 연습</title>
 <script src="lib/lightweight-charts.standalone.production.js"></script>
 <script>
+// 차트 리플레이 화면은 2026-11-24에 없앴다. 이 주소는 차트게임만 연다 (?game 없이 와도 차트게임으로)
+if (!new URLSearchParams(location.search).has('game')) location.replace('replay.html?game' + location.search.replace(/^\?/, '&'));
+</script>
+<script>
 // 우리 파일(css·js)은 매번 새로 받게 주소 뒤에 숫자를 붙인다: 업데이트 뒤 브라우저가 예전 파일을 쓰지 않도록 (라이브러리는 안 바뀌니 그대로)
 window.ASSET_V = new URLSearchParams(location.search).get('v') || String(Date.now());
 document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
 </script>
 <style>
-  :root { --bg:#131722; --panel:#1c2030; --line:#2a2e39; --text:#d1d4dc; --dim:#868b98; --up:#26a69a; --down:#ef5350; --accent:#2962ff; }
+  :root { --bg:#0b0b0c; --panel:#141416; --line:#2a2a2e; --text:#d4d4d8; --dim:#8a8a93; --up:#26a69a; --down:#ef5350; --accent:#52525b; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:13px -apple-system, "Apple SD Gothic Neo", sans-serif; display:flex; flex-direction:column; height:100vh; }
   .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 10px; background:var(--panel); border-bottom:1px solid var(--line); }
   .bar label { color:var(--dim); }
-  select, input, button { background:#262b3c; color:var(--text); border:1px solid #363c4e; border-radius:4px; padding:4px 7px; font:inherit; }
+  select, input, button { background:#232326; color:var(--text); border:1px solid #3a3a40; border-radius:4px; padding:4px 7px; font:inherit; }
   button { cursor:pointer; }
-  button:hover { border-color:#5a6175; }
+  button:hover { border-color:#5a5a62; }
   button.primary { background:var(--accent); border-color:var(--accent); }
   button.long { background:#1b5e57; border-color:var(--up); }
   button.short { background:#6b2a2a; border-color:var(--down); }
@@ -28,19 +32,19 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
   #main { flex:1; display:flex; min-height:0; }
   #left { flex:1; min-width:0; display:flex; flex-direction:column; }
   #chart { flex:1; min-width:0; min-height:0; position:relative; overflow:hidden; }
-  #bottom { height:230px; flex:none; border-top:1px solid var(--line); background:#161a25; display:flex; flex-direction:column; }
+  #bottom { height:230px; flex:none; border-top:1px solid var(--line); background:#0f0f11; display:flex; flex-direction:column; }
   .btabs { display:flex; gap:22px; align-items:center; padding:0 12px; border-bottom:1px solid var(--line); }
   .btabs .bt { background:none; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 1px 6px; color:var(--dim); font-size:13px; }
   .btabs .bt.on { color:#fff; border-bottom-color:#fff; }
   .bfilter { display:flex; gap:6px; align-items:center; padding:6px 12px; font-size:12px; flex-wrap:wrap; }
-  .bfilter .seg { display:flex; background:#262b3c; border-radius:4px; padding:2px; }
+  .bfilter .seg { display:flex; background:#232326; border-radius:4px; padding:2px; }
   .bfilter .seg button { background:none; border:none; padding:2px 9px; color:var(--dim); font-size:12px; }
-  .bfilter .seg button.on { background:#3a4054; color:#fff; }
+  .bfilter .seg button.on { background:#3f3f46; color:#fff; }
   #bbody { flex:1; overflow:auto; }
   #bbody table { font-size:12px; }
-  #bbody th { position:sticky; top:0; background:#161a25; color:var(--dim); font-weight:normal; text-align:left; padding:6px 10px; white-space:nowrap; }
+  #bbody th { position:sticky; top:0; background:#0f0f11; color:var(--dim); font-weight:normal; text-align:left; padding:6px 10px; white-space:nowrap; }
   #bbody td { text-align:left; padding:6px 10px; white-space:nowrap; vertical-align:middle; }
-  #bbody .tag { display:inline-block; background:#262b3c; color:var(--dim); border-radius:3px; padding:0 5px; font-size:11px; margin-right:3px; }
+  #bbody .tag { display:inline-block; background:#232326; color:var(--dim); border-radius:3px; padding:0 5px; font-size:11px; margin-right:3px; }
   #bbody .empty { text-align:center; color:var(--dim); padding:40px 0; }
   #bbody td button { padding:2px 8px; font-size:12px; }
   #legend { position:absolute; top:6px; left:8px; z-index:5; pointer-events:none; font-size:13px; font-variant-numeric: tabular-nums;
@@ -52,17 +56,17 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
   #acct { padding:8px; border:1px solid var(--line); border-radius:4px; line-height:1.6; font-variant-numeric: tabular-nums; }
   #ordBox { padding:6px 8px; border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; gap:5px; }
   .otop { display:flex; gap:8px; align-items:center; }
-  .chip { background:#262b3c; border-radius:4px; padding:4px 8px; font-weight:600; white-space:nowrap; }
+  .chip { background:#232326; border-radius:4px; padding:4px 8px; font-weight:600; white-space:nowrap; }
   .chip input.levIn { width:40px; padding:0 2px; background:transparent; border:none; font-weight:600; text-align:right; }
   .tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); }
   .tabs .tab { background:none; border:none; border-bottom:2px solid transparent; border-radius:0; padding:6px 1px; color:var(--dim); font-size:14px; }
   .tabs .tab.on { color:#fff; border-bottom-color:#fff; }
   .flab { color:var(--dim); font-size:12px; margin-bottom:3px; }
-  .inbox { display:flex; align-items:center; gap:6px; background:#262b3c; border:1px solid #363c4e; border-radius:6px; padding:0 9px; height:36px; }
-  .inbox:focus-within { border-color:#5a6175; }
+  .inbox { display:flex; align-items:center; gap:6px; background:#232326; border:1px solid #3a3a40; border-radius:6px; padding:0 9px; height:36px; }
+  .inbox:focus-within { border-color:#5a5a62; }
   .inbox input { flex:1; min-width:0; background:transparent; border:none; padding:0; font-size:14px; outline:none; }
-  button.link { background:none; border:none; color:#5b8def; padding:0; }
-  input[type=range] { width:100%; margin:2px 0; accent-color:#d1d4dc; padding:0; }
+  button.link { background:none; border:none; color:#a1a1aa; padding:0; }
+  input[type=range] { width:100%; margin:2px 0; accent-color:#d4d4d8; padding:0; }
   .ticks { display:flex; justify-content:space-between; }
   .ticks button { background:none; border:none; color:var(--dim); padding:0; font-size:11px; }
   .row2 { display:flex; justify-content:space-between; align-items:center; font-variant-numeric:tabular-nums; }
@@ -77,7 +81,7 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
   .ochip span { padding:0 6px; display:flex; align-items:center; }
   .ochip .x { cursor:pointer; background:rgba(0,0,0,.28); }
   .ochip .x:hover { background:rgba(0,0,0,.5); }
-  .ochip.add { cursor:pointer; background:#1e222d; color:#d1d4dc; border:1px solid #434651; }
+  .ochip.add { cursor:pointer; background:#18181b; color:#d4d4d8; border:1px solid #46464d; }
   #chart.nsr, #chart.nsr * { cursor:ns-resize !important; }
   #pos { padding:8px; border:1px solid var(--line); border-radius:4px; font-variant-numeric: tabular-nums; }
   table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric: tabular-nums; }
@@ -99,11 +103,11 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
     #bottom { flex:1; height:auto; min-height:var(--botH, 230px); }
     #side { position:sticky; top:0; align-self:flex-start; height:var(--mainH, 100vh); }
   }
-  #bigBtn { background:none; border:1px solid #363c4e; border-radius:4px; padding:2px 8px; color:var(--dim); font-size:12px; }
+  #bigBtn { background:none; border:1px solid #3a3a40; border-radius:4px; padding:2px 8px; color:var(--dim); font-size:12px; }
   #bigBtn:hover { color:#fff; }
   @media (max-width: 900px) { #bigBtn { display:none; } }
   #chart { cursor:crosshair; }
-  kbd { background:#262b3c; border:1px solid #363c4e; border-radius:3px; padding:0 4px; font-size:11px; }
+  kbd { background:#232326; border:1px solid #3a3a40; border-radius:3px; padding:0 4px; font-size:11px; }
 </style>
 </head>
 <body>
@@ -266,8 +270,8 @@ document.write('<link rel="stylesheet" href="draw.css?v=' + ASSET_V + '">');
     </div>
     <div class="help" style="border-top:1px solid var(--line); padding-top:6px">
       비상업 개인 연습용 도구입니다. 매매 신호·투자 조언이 아니며 실제 주문 기능은 없습니다.<br>
-      차트 데이터는 이 사이트에 들어 있지 않습니다. 각자 바이낸스 공개 데이터(<a href="https://data.binance.vision/" target="_blank" rel="noopener" style="color:#5b8def">Binance Vision</a>, CC BY-NC-SA 4.0)·업비트 Open API 에서 받아 개인 용도로만 쓰세요.<br>
-      차트: <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:#5b8def">TradingView Lightweight Charts™</a> Copyright (с) 2024 TradingView, Inc. (Apache 2.0)
+      차트 데이터는 이 사이트에 들어 있지 않습니다. 각자 바이낸스 공개 데이터(<a href="https://data.binance.vision/" target="_blank" rel="noopener" style="color:#a1a1aa">Binance Vision</a>, CC BY-NC-SA 4.0)·업비트 Open API 에서 받아 개인 용도로만 쓰세요.<br>
+      차트: <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:#a1a1aa">TradingView Lightweight Charts™</a> Copyright (с) 2024 TradingView, Inc. (Apache 2.0)
     </div>
   </div>
 </div>
@@ -313,11 +317,11 @@ function setOrd(id, patch) { const r = orders.find((x) => x.id === id); if (r) {
 // ---------------------------------------------------------------- 차트
 const chart = LightweightCharts.createChart($('chart'), {
   autoSize: true,
-  layout: { background: { color: '#131722' }, textColor: '#d1d4dc', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif' },
+  layout: { background: { color: '#0b0b0c' }, textColor: '#d4d4d8', fontFamily: '-apple-system, "Apple SD Gothic Neo", sans-serif' },
   grid: { vertLines: { visible: false }, horzLines: { visible: false } },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  rightPriceScale: { borderColor: '#2a2e39' },
-  timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 8 },
+  rightPriceScale: { borderColor: '#2a2a2e' },
+  timeScale: { borderColor: '#2a2a2e', timeVisible: true, secondsVisible: false, rightOffset: 8 },
   localization: { locale: 'ko-KR', timeFormatter: (t) => fmtKst(t - KST_OFF) },
 });
 const candle = chart.addCandlestickSeries({
@@ -390,7 +394,7 @@ async function loadIndex() {
     sel.innerHTML = '<option value="">(데이터 없음)</option>';
     $('month').innerHTML = '';
     $('info').innerHTML = '<span>이 사이트에는 차트 데이터가 들어 있지 않아요. ' +
-      '<a href="https://github.com/tmdwbk/chart-replay#readme" target="_blank" rel="noopener" style="color:#5b8def">설명서</a>대로 ' +
+      '<a href="https://github.com/tmdwbk/chart-replay#readme" target="_blank" rel="noopener" style="color:#a1a1aa">설명서</a>대로 ' +
       '<b>fetch.py</b> 로 내 컴퓨터에 받은 뒤, 위의 <b>[데이터 폴더 열기]</b>로 그 <b>data</b> 폴더를 고르세요. ' +
       '<span class="dim">(파일은 내 브라우저 안에서만 읽고 어디로도 보내지 않아요)</span></span>';
     return;

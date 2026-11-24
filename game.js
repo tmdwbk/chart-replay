@@ -74,7 +74,7 @@
     if (cursor < 0 || !G.round) return;
     const a = agg[agg.length - 1], ch = (a.c / a.o - 1) * 100, r = G.round;
     $('info').innerHTML =
-      `<span><b>${dispSym()}</b> <span class="dim">${hidden() ? '종목·날짜는 종목이 끝나면 공개' : r.name + ' · ' + (r.sources || []).map((x) => (x === 'bybit' ? '바이비트' : '바이낸스') + ' 선물').join('·')}</span></span>` +
+      `<span><b>${dispSym()}</b> <span class="dim">${hidden() ? '종목·날짜는 종목이 끝나면 공개' : r.name + ' · ' + (r.sources || []).map((x) => (x === 'bybit' ? '바이비트' : x === 'gate' ? '게이트' : '바이낸스') + ' 선물') + (r.mine ? ' · 🔁 내 매매 차트' : '').join('·')}</span></span>` +
       `<span>턴 <b>${r.turn}/${TURNS}</b></span><span>지금 <b>${fmtKst(nowT())}</b> KST</span>` +
       `<span>5분 봉 시 ${fmtP(a.o)} 고 ${fmtP(a.h)} 저 ${fmtP(a.l)} 종 <b class="${cls(ch)}">${fmtP(a.c)}</b> <span class="${cls(ch)}">${sgn(ch)}%</span></span>` +
       `<span class="dim">거래대금 ${fmtBig(a.qv)} USDT</span>`;
@@ -96,7 +96,7 @@
       '<table><thead><tr><th>#</th><th>종목</th><th>기간 (KST)</th><th>턴</th><th>진입</th><th>손익</th><th>수익률</th><th>끝 잔고</th><th>티어</th><th>플레이</th><th>끝난 이유</th></tr></thead><tbody>' +
       h.slice().reverse().map((x) => `<tr><td class="dim">${x.n}</td><td>${x.daily ? '📅 ' : ''}<b>${x.name}</b> <span class="dim">${x.short}</span></td>` +
         `<td class="dim">${origFmt(x.from)} ~ ${origFmt(x.to).slice(11)}</td><td>${x.turns}</td><td>${x.entries}회${x.liq ? ' <span class="down">강제청산</span>' : ''}</td>` +
-        `<td class="${cls(x.pnl)}">${usdS(x.pnl)}</td><td class="${cls(x.pnl)}">${sgn(x.pnl / x.startCash * 100)}%</td><td>${usd(x.endCash)}</td><td style="color:${TIERS[tierIndex(x.endCash)].c1}">${TIERS[tierIndex(x.endCash)].name}</td><td class="dim">${x.playMs != null ? fmtDur(x.playMs) : '-'}</td><td class="dim">${x.why || ''}</td></tr>`).join('') +
+        `<td class="${cls(x.pnl)}">${usdS(x.pnl)}</td><td class="${cls(x.pnl)}">${sgn(x.pnl / x.startCash * 100)}%</td><td>${usd(x.endCash)}</td><td style="color:${TIERS[x.tierTo ?? tierIndex(x.endCash)].c1}">${TIERS[x.tierTo ?? tierIndex(x.endCash)].name}</td><td class="dim">${x.playMs != null ? fmtDur(x.playMs) : '-'}</td><td class="dim">${x.why || ''}</td></tr>`).join('') +
       '</tbody></table>';
   };
   const origRenderPos = renderPos;
@@ -105,85 +105,86 @@
   // ------------------------------------------------------------ 화면 바꾸기
   const css = document.createElement('style');
   css.textContent = `
-    #gHome { position:fixed; inset:0; z-index:100; background:#131722; display:flex; overflow-y:auto; padding:24px 0; }
+    #gHome { position:fixed; inset:0; z-index:100; background:#0b0b0c; display:flex; overflow-y:auto; padding:24px 0; }
     #gHome .card { margin:auto; }
-    #gHome .card { width:390px; background:linear-gradient(180deg, #1b2a24 0%, #1a1f2b 55%); border:1px solid #2b3a33; border-radius:28px; padding:34px 26px 26px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.45); }
-    #gHome .ico { width:140px; height:140px; margin:0 auto 14px; border-radius:50%; background:radial-gradient(circle, #23493a 0%, #1b2f28 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
+    #gHome .card { width:390px; background:linear-gradient(180deg, #1a1a1d 0%, #141416 55%); border:1px solid #2a2a2e; border-radius:28px; padding:34px 26px 26px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.45); }
+    #gHome .ico { width:140px; height:140px; margin:0 auto 14px; border-radius:50%; background:radial-gradient(circle, #2a2a2e 0%, #161618 70%, transparent 72%); display:flex; align-items:center; justify-content:center; }
     #gHome .ico svg { width:118px; height:118px; filter:drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
-    #gHome .kick { color:#4caf85; letter-spacing:.22em; font-weight:700; font-size:12px; }
+    #gHome .kick { color:#a1a1aa; letter-spacing:.22em; font-weight:700; font-size:12px; }
     #gHome h1 { color:#fff; font-size:22px; margin:8px 0 10px; }
-    #gHome p { color:#a3a8b5; line-height:1.6; margin:0 0 20px; font-size:13.5px; }
-    #gHome .row { display:flex; justify-content:space-between; align-items:center; background:#232838; border-radius:14px; padding:16px 20px; margin-bottom:10px; }
-    #gHome .row .l { color:#868b98; } #gHome .row .r { color:#fff; font-size:18px; font-weight:700; }
-    #gHome .go { width:100%; background:#2e7d5b; border:none; border-radius:16px; padding:17px 0; color:#fff; font-size:16px; font-weight:700; margin-top:6px; }
-    #gHome .go:hover { background:#348c66; } #gHome .go:disabled { opacity:.5; }
-    #gHome .note { margin-top:14px; font-size:12px; color:#868b98; line-height:1.5; }
-    #gHome .back { position:absolute; top:14px; left:16px; color:#5b8def; text-decoration:none; }
-    #gTurn { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#1e222d; }
-    #gTurn .prog { flex:1; height:6px; background:#2a2e39; border-radius:3px; overflow:hidden; }
-    #gTurn .prog i { display:block; height:100%; width:0; background:#5b8def; transition:width .15s; }
-    #gNext { background:#1e2a4a; border-color:#2f4a8a; color:#8fb0ff; white-space:nowrap; min-width:92px; }
+    #gHome p { color:#a1a1aa; line-height:1.6; margin:0 0 20px; font-size:13.5px; }
+    #gHome .row { display:flex; justify-content:space-between; align-items:center; background:#1f1f22; border-radius:14px; padding:16px 20px; margin-bottom:10px; }
+    #gHome .row .l { color:#8a8a93; } #gHome .row .r { color:#fff; font-size:18px; font-weight:700; }
+    #gHome .go { width:100%; background:#e4e4e7; border:none; border-radius:16px; padding:17px 0; color:#0b0b0c; font-size:16px; font-weight:700; margin-top:6px; }
+    #gHome .go:hover { background:#fff; } #gHome .go:disabled { opacity:.5; }
+    #gHome .note { margin-top:14px; font-size:12px; color:#8a8a93; line-height:1.5; }
+    #gHome .back { position:absolute; top:14px; left:16px; color:#a1a1aa; text-decoration:none; }
+    #gTurn { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#18181b; }
+    #gTurn .prog { flex:1; height:6px; background:#2a2a2e; border-radius:3px; overflow:hidden; }
+    #gTurn .prog i { display:block; height:100%; width:0; background:#a1a1aa; transition:width .15s; }
+    #gNext { background:#232326; border-color:#3f3f46; color:#e4e4e7; white-space:nowrap; min-width:92px; }
     #chartRow { position:relative; }
     #gResult { position:absolute; inset:0; z-index:9; display:none; align-items:center; justify-content:center; background:rgba(10,12,18,.55); }
-    #gResult .rc { background:#1e222d; border:1px solid #363c4e; border-radius:14px; padding:22px 26px; min-width:340px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+    #gResult .rc { background:#18181b; border:1px solid #3a3a40; border-radius:14px; padding:22px 26px; min-width:340px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.5); }
     #gResult h2 { margin:0 0 4px; color:#fff; font-size:20px; }
     #gResult .bigp { font-size:24px; font-weight:700; margin:12px 0 4px; }
-    #gResult button { margin-top:16px; background:#2e7d5b; border:none; color:#fff; font-weight:700; padding:10px 28px; border-radius:10px; font-size:14px; }
+    #gResult button[style] { color:#e4e4e7; }   /* 배경을 따로 준 보조 버튼은 밝은 글자 */
+    #gResult button { margin-top:16px; background:#e4e4e7; border:none; color:#0b0b0c; font-weight:700; padding:10px 28px; border-radius:10px; font-size:14px; }
 
     #side { gap:10px; }
     :root { --botH:153px; }   /* 아래 기록 칸: 리플레이(230px)의 2/3 */
-    .gcard { background:#1e222d; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
+    .gcard { background:#18181b; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
     #gTurn.gcard { flex-direction:row; }
     .gtier { display:flex; align-items:center; gap:10px; }
     .gtier .tn { color:#fff; font-weight:700; font-size:15px; letter-spacing:.02em; }
-    .gtier .tbar { height:5px; background:#2a2e39; border-radius:3px; overflow:hidden; margin-top:5px; }
+    .gtier .tbar { height:5px; background:#2a2a2e; border-radius:3px; overflow:hidden; margin-top:5px; }
     .gtier .tbar i { display:block; height:100%; width:0; border-radius:3px; }
     #gToast { position:fixed; left:50%; top:22%; transform:translateX(-50%); z-index:200; display:none; flex-direction:column; align-items:center; gap:6px;
-      background:rgba(20,24,33,.96); border:1px solid #3a4054; border-radius:18px; padding:22px 40px; box-shadow:0 18px 50px rgba(0,0,0,.6); text-align:center; }
+      background:rgba(20,24,33,.96); border:1px solid #3f3f46; border-radius:18px; padding:22px 40px; box-shadow:0 18px 50px rgba(0,0,0,.6); text-align:center; }
     #gToast .k { letter-spacing:.2em; font-size:12px; font-weight:700; } #gToast .n { color:#fff; font-size:22px; font-weight:800; }
     #gHome .tname { color:#fff; font-size:17px; font-weight:800; margin:-8px 0 2px; } #gHome .ten { font-size:11px; letter-spacing:.25em; margin-bottom:14px; }
-    #gHome details { text-align:left; margin-top:10px; font-size:12.5px; color:#a3a8b5; }
-    #gHome details summary { cursor:pointer; color:#868b98; text-align:center; }
+    #gHome details { text-align:left; margin-top:10px; font-size:12.5px; color:#a1a1aa; }
+    #gHome details summary { cursor:pointer; color:#8a8a93; text-align:center; }
     .tlist { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:8px; }
-    .tlist div { display:flex; flex-direction:column; align-items:center; background:#232838; border-radius:10px; padding:6px 2px; font-size:11.5px; }
-    .tlist div.me { outline:1px solid #5b8def; }
+    .tlist div { display:flex; flex-direction:column; align-items:center; background:#1f1f22; border-radius:10px; padding:6px 2px; font-size:11.5px; }
+    .tlist div.me { outline:1px solid #a1a1aa; }
     .grv { display:grid; grid-template-columns:repeat(5, auto); gap:4px 14px; justify-content:center; margin:12px 0 4px; }
     .grv div { display:flex; flex-direction:column; align-items:center; font-size:12px; } .grv b { font-size:15px; }
     .gresach { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
-    .gresach span { background:#2b3445; border:1px solid #f0b90b66; color:#ffe08a; border-radius:12px; padding:3px 10px; font-size:12px; }
+    .gresach span { background:#232326; border:1px solid #f0b90b66; color:#ffe08a; border-radius:12px; padding:3px 10px; font-size:12px; }
     #gAchToast { position:fixed; right:18px; bottom:18px; z-index:210; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
-    .gach { display:flex; gap:10px; align-items:center; background:#1e222d; border:1px solid #f0b90b88; border-radius:12px; padding:10px 14px; min-width:250px; max-width:330px; box-shadow:0 10px 30px rgba(0,0,0,.5); animation:gachIn .25s ease-out; }
+    .gach { display:flex; gap:10px; align-items:center; background:#18181b; border:1px solid #f0b90b88; border-radius:12px; padding:10px 14px; min-width:250px; max-width:330px; box-shadow:0 10px 30px rgba(0,0,0,.5); animation:gachIn .25s ease-out; }
     @keyframes gachIn { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
     .ai { font-size:24px; width:32px; text-align:center; }
     .glist { display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:6px; padding:4px 12px 12px; }
-    .glist > div { display:flex; gap:8px; align-items:center; background:#1e222d; border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12px; opacity:.45; filter:grayscale(1); }
+    .glist > div { display:flex; gap:8px; align-items:center; background:#18181b; border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12px; opacity:.45; filter:grayscale(1); }
     .glist > div.on { opacity:1; filter:none; border-color:#f0b90b66; }
-    #gHome .go2 { width:100%; background:#2b3f6b; border:none; border-radius:16px; padding:13px 0; color:#fff; font-size:14.5px; font-weight:700; margin-top:8px; }
-    #gHome .go2:hover { background:#34508a; }
+    #gHome .go2 { width:100%; background:#2c2c31; border:none; border-radius:16px; padding:13px 0; color:#fff; font-size:14.5px; font-weight:700; margin-top:8px; }
+    #gHome .go2:hover { background:#3a3a40; }
     .gmodal { position:fixed; inset:0; z-index:150; display:none; align-items:center; justify-content:center; background:rgba(8,10,15,.6); }
-    .gm { background:#1e222d; border:1px solid #363c4e; border-radius:14px; padding:16px 20px; max-height:90vh; overflow:auto; box-shadow:0 18px 50px rgba(0,0,0,.6); max-width:94vw; }
+    .gm { background:#18181b; border:1px solid #3a3a40; border-radius:14px; padding:16px 20px; max-height:90vh; overflow:auto; box-shadow:0 18px 50px rgba(0,0,0,.6); max-width:94vw; }
     .gmh { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:15px; }
     .gkt td { padding:5px 10px; font-size:13px; } .gkt td:first-child { white-space:nowrap; text-align:right; }
     .gkt kbd { font-size:12px; padding:1px 6px; }
-    .gtopb { background:#262b3c; border:1px solid #363c4e; border-radius:12px; padding:3px 10px; }
+    .gtopb { background:#232326; border:1px solid #3a3a40; border-radius:12px; padding:3px 10px; }
     .gscs { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
-    .gsc { background:#262b3c; border-radius:8px; padding:7px 10px; font-size:11.5px; } .gsc b { font-size:16px; color:#fff; display:block; margin-top:2px; } .gsc b.up { color:var(--up); } .gsc b.down { color:var(--down); }
+    .gsc { background:#232326; border-radius:8px; padding:7px 10px; font-size:11.5px; } .gsc b { font-size:16px; color:#fff; display:block; margin-top:2px; } .gsc b.up { color:var(--up); } .gsc b.down { color:var(--down); }
     .gm h4 { margin:14px 0 6px; font-size:13px; }
-    .gchart { width:100%; height:auto; background:#161a25; border-radius:8px; }
+    .gchart { width:100%; height:auto; background:#0f0f11; border-radius:8px; }
     .g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
     .gst { width:100%; font-size:12px; border-collapse:collapse; } .gst th { color:var(--dim); font-weight:400; text-align:left; padding:3px 6px; } .gst td { padding:4px 6px; border-top:1px solid var(--line); }
     .gwhy div { display:grid; grid-template-columns:80px 1fr 30px; align-items:center; gap:6px; font-size:12px; margin:3px 0; }
-    .gwhy i { display:block; height:8px; background:#5b8def; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
+    .gwhy i { display:block; height:8px; background:#a1a1aa; border-radius:4px; min-width:2px; } .gwhy b { text-align:right; }
     #fillLayer { position:absolute; inset:0; pointer-events:none; z-index:3; overflow:hidden; }
     .fbadge { position:absolute; transform:translate(-50%, -50%); min-width:15px; height:15px; padding:0 2px; border-radius:3px; font:700 10px/15px -apple-system, sans-serif; text-align:center; color:#fff; pointer-events:auto; cursor:default; }
     .fbadge.b { background:rgba(38,166,154,.8); } .fbadge.s { background:rgba(239,83,80,.8); }   /* 글자 둘레 색: 불투명도 80% */
     .fbadge:hover { outline:2px solid #fff; z-index:2; }
     .farrow { position:absolute; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:9px solid; transform:translate(-100%, -50%); filter:drop-shadow(0 0 2px rgba(0,0,0,.8)); pointer-events:none; }
     .farrow.b { border-left-color:#26a69a; } .farrow.s { border-left-color:#ef5350; }
-    #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2e39; border:1px solid #434651; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
-    #fillTip hr { border:none; border-top:1px solid #434651; margin:4px 0; }
+    #fillTip { position:absolute; z-index:6; display:none; pointer-events:none; background:#2a2a2e; border:1px solid #46464d; border-radius:6px; padding:6px 10px; font-size:12px; line-height:1.5; white-space:nowrap; box-shadow:0 6px 18px rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
+    #fillTip hr { border:none; border-top:1px solid #46464d; margin:4px 0; }
     .ochip.pinfo { cursor:default; pointer-events:none; }   /* 보기만: 끌거나 누를 수 없음 */
-    .grealfee { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px; padding:6px 8px; border:1px solid #363c4e; border-radius:8px; background:#232838; }
+    .grealfee { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px; padding:6px 8px; border:1px solid #3a3a40; border-radius:8px; background:#1f1f22; }
     .grealfee input { accent-color:#f0b90b; flex:none; } .grealfee b { white-space:nowrap; } .grealfee span { font-size:11px; }
     #gFx { position:absolute; inset:0; pointer-events:none; z-index:8; overflow:hidden; }
     .fxPnl { position:absolute; transform:translate(-50%, -50%); text-align:center; font-variant-numeric:tabular-nums; animation:fxPop 2.1s cubic-bezier(.2,1.4,.4,1) forwards; text-shadow:0 2px 10px rgba(0,0,0,.7); white-space:nowrap; }
@@ -204,21 +205,27 @@
     #chart.fxShake { animation:fxShake .45s ease-in-out; } #chart.fxShakeHard { animation:fxShakeHard .65s ease-in-out; }
     @keyframes fxShake { 0%,100% { transform:none; } 20% { transform:translateX(-6px); } 40% { transform:translateX(6px); } 60% { transform:translateX(-4px); } 80% { transform:translateX(3px); } }
     @keyframes fxShakeHard { 0%,100% { transform:none; } 10% { transform:translate(-12px, 4px); } 25% { transform:translate(11px, -5px); } 40% { transform:translate(-9px, 3px); } 55% { transform:translate(8px, -3px); } 70% { transform:translate(-5px, 2px); } 85% { transform:translate(3px, 0); } }
+    .gseries { display:flex; align-items:center; gap:4px; flex-wrap:wrap; font-size:12px; margin:2px 0; }
+    .gseries b { margin-right:2px; }
+    .sd { display:inline-flex; width:18px; height:18px; border-radius:50%; border:1px solid #4a4a50; background:#242427; font-style:normal; font-size:9.5px; font-weight:700; align-items:center; justify-content:center; color:#fff; }
+    .sd.w { background:#1f7a4d; border-color:#3ddc97; } .sd.l { background:#8a2b2b; border-color:#ff6b6b; }
+    .gach.bad { border-color:#ef535088; } .gach.go { border-color:#9a9aa2; }
+    .gmine { margin-top:8px; padding:6px 10px; border:1px solid #3f3f46; border-radius:8px; background:#141416; font-size:12.5px; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
     .gacts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
     .gacts button { height:50px; font-size:14px; font-weight:700; border-radius:8px; border:none; color:#fff; padding:0 4px; flex:none; }
-    .gacts #btnLong { background:#1f7a4d; } .gacts #btnShort { background:#c2454f; } .gacts #gHoldBtn { background:#2f3546; border:1px solid #3a4054; }
+    .gacts #btnLong { background:#1f7a4d; } .gacts #btnShort { background:#c2454f; } .gacts #gHoldBtn { background:#2c2c31; border:1px solid #3f3f46; }
     .gacts button:hover { filter:brightness(1.1); }
     .gacts button:disabled { opacity:.45; }
     .gpcts { display:flex; gap:6px; align-items:center; }
-    .gpcts button { flex:1; padding:6px 0; background:#262b3c; border:1px solid #363c4e; border-radius:6px; }
-    .gpcts button.on { background:#e8eaed; color:#131722; border-color:#e8eaed; font-weight:700; }
+    .gpcts button { flex:1; padding:6px 0; background:#232326; border:1px solid #3a3a40; border-radius:6px; }
+    .gpcts button.on { background:#e8eaed; color:#0b0b0c; border-color:#e8eaed; font-weight:700; }
     .gavail { font-size:12px; }
-    .gseg { border:none !important; background:#262b3c; border-radius:8px; padding:3px; gap:3px !important; }
+    .gseg { border:none !important; background:#232326; border-radius:8px; padding:3px; gap:3px !important; }
     .gseg .tab { flex:1; border:none !important; border-radius:6px !important; padding:6px 0 !important; font-size:13px !important; }
-    .gseg .tab.on { background:#3a4054; color:#fff; }
+    .gseg .tab.on { background:#3f3f46; color:#fff; }
     .gkeys { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; color:var(--dim); font-size:12px; margin-top:4px; }
     .gfixed { font-size:11px; text-align:center; }
     .ghelp summary { cursor:pointer; color:var(--dim); font-size:12px; }
@@ -229,7 +236,7 @@
   // 위 막대: 데이터 고르기·시작 시각·봉·넘기는 단위·뒤로 가기는 숨긴다
   const bar = document.querySelector('.bar');
   const gameLink = bar.querySelector('a[href="replay.html?game"]');
-  if (gameLink) { gameLink.href = 'replay.html'; gameLink.textContent = '← 차트 리플레이'; gameLink.style.background = '#262b3c'; }
+  if (gameLink) gameLink.classList.add('gHide');   // 리플레이 화면은 없앰 (2026-11-24)
   ['symbol', 'month', 'btnDir', 'fileInput', 'startAt', 'btnStart', 'tf', 'unit', 'btnBack'].forEach((id) => {
     const el = $(id); if (!el) return;
     const lab = el.closest('label'); (lab || el).classList.add('gHide');
@@ -243,7 +250,7 @@
   bar.appendChild(rule);
   const playTop = document.createElement('span'); playTop.id = 'gPlayTop';          // 맨 오른쪽 위: 전체 플레이타임 n.n시간
   playTop.title = '전체 플레이타임 (게임 화면을 보고 움직일 때만 셈)';
-  playTop.style.cssText = 'margin-left:auto; color:#fff; font-weight:700; font-variant-numeric:tabular-nums; background:#262b3c; border:1px solid #363c4e; border-radius:12px; padding:3px 12px';
+  playTop.style.cssText = 'margin-left:auto; color:#fff; font-weight:700; font-variant-numeric:tabular-nums; background:#232326; border:1px solid #3a3a40; border-radius:12px; padding:3px 12px';
   bar.appendChild(playTop);
   $('btnStep').textContent = '▶ 다음 봉'; $('btnStep').title = 'H 또는 →';
   $('tf').value = '5'; tfSec = 300;
@@ -300,7 +307,7 @@
   posCard.append($('pos'), $('posBtns'), $('pcBox'));
   const helpBox = mk('details', 'ghelp', '<summary>도움말</summary>');
   [...side.querySelectorAll('.help')].forEach((h) => helpBox.appendChild(h));
-  helpBox.querySelector('.help').insertAdjacentHTML('afterbegin', '<b style="color:#d1d4dc">차트게임</b>: 50턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요. 비중 = 주문 가능 현금 중 증거금으로 쓸 비율.<br>');
+  helpBox.querySelector('.help').insertAdjacentHTML('afterbegin', '<b style="color:#d4d4d8">차트게임</b>: 50턴째 봉이나 [다음종목]에서 열린 포지션은 그 봉 종가로 자동 청산되고, 대기 주문은 취소돼요. 새 종목은 5초 뒤에 넘길 수 있어요. 비중 = 주문 가능 현금 중 증거금으로 쓸 비율.<br>');
   // 안 쓰는 것 숨기기: 레버리지 칩 줄, 슬라이더, 최대 수량, 자산 제목·칸, 시작 잔고 줄, 원래 버튼 줄
   hideEl(document.querySelector('#side .otop')); hideEl(sliderWrap); hideEl($('maxL').closest('.row2')); hideEl(longParent);
   hideEl($('avail').closest('.row2')); hideEl($('orderHint').closest('.row2'));
@@ -345,19 +352,87 @@
     renderTier(); renderPlay();
   }
   // ------------------------------------------------------------ 티어 · 플레이타임
+  // ------------------------------------------------------------ 티어 · 승급전 (2026-11-24 승주 결정)
+  // 잔고가 다음 티어 기준을 넘으면 바로 오르지 않고 승급전: 5판 중 3승. 한 판 = 포지션 하나를 끝까지 청산한 매매.
+  // 승리 = 그 매매 순손익(수수료·펀딩 포함) +10 USDT 이상, 패배 = 조금이라도 손실, 0~10 미만은 무승부(판수에 안 셈).
+  // 3패면 실패 → 매매 3번 뒤 다시 도전. 승급전 중 잔고가 기준 아래로 내려가면 취소. 잔고가 지금 티어 기준 아래면 바로 강등.
+  const SERIES_GAMES = 5, SERIES_WINS = 3, SERIES_WIN_USDT = 10, SERIES_COOLDOWN = 3;
+  function rankNow() { if (G.rank == null) G.rank = tierIndex(acct.balance); return G.rank; }   // 처음엔 잔고로 정함(예전 기록 이어받기)
+  function seriesDots(se) {
+    const res = se.games.filter((g) => g !== 'D');
+    let h = '';
+    for (let k = 0; k < SERIES_GAMES; k++) h += `<i class="sd ${res[k] === 'W' ? 'w' : res[k] === 'L' ? 'l' : ''}">${res[k] === 'W' ? '승' : res[k] === 'L' ? '패' : ''}</i>`;
+    return h;
+  }
+  function seriesText(se) {
+    const d = se.games.filter((g) => g === 'D').length;
+    return `${se.w}승 ${se.l}패${d ? ` · 무승부 ${d}` : ''} · ${SERIES_WINS}승 하면 승급`;
+  }
   function tierBlock(i, size) {
-    const t = TIERS[i], nx = TIERS[i + 1], bal = acct.balance;
+    const t = TIERS[i], nx = TIERS[i + 1], bal = acct.balance, se = G.series;
     const pct = nx ? Math.max(0, Math.min(100, (bal - t.min) / (nx.min - t.min) * 100)) : 100;
-    return `${tierSvg(i, size)}<div style="flex:1; min-width:0"><div class="tn" style="color:${t.c1}">${t.name} <small class="dim" style="font-weight:400">${t.en}</small></div>` +
-      `<div class="dim" style="font-size:11.5px">${nx ? `${nx.name} (${usd(nx.min).replace('.00', '')})까지 ${usd(nx.min - bal)} 남음` : '최고 티어'}</div>` +
-      `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div></div>`;
+    let sub;
+    if (se) sub = `<div class="gseries"><b style="color:${TIERS[se.to].c1}">${TIERS[se.to].name} 승급전</b> ${seriesDots(se)}</div><div class="dim" style="font-size:11px">${seriesText(se)} · 판당 +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배</div>`;
+    else if (nx && bal >= nx.min && G.seriesCool > 0) sub = `<div class="dim" style="font-size:11.5px">승급전 다시 도전까지 매매 <b>${G.seriesCool}</b>번</div>`;
+    else sub = `<div class="dim" style="font-size:11.5px">${nx ? `${nx.name} 승급전 (${usd(nx.min).replace('.00', '')})까지 ${usd(Math.max(0, nx.min - bal))} 남음` : '최고 티어'}</div>` +
+      `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div>`;
+    return `${tierSvg(i, size)}<div style="flex:1; min-width:0"><div class="tn" style="color:${t.c1}">${t.name} <small class="dim" style="font-weight:400">${t.en}</small></div>${sub}</div>`;
+  }
+  function seriesToast(html, cls2 = '') {
+    const d = document.createElement('div'); d.className = 'gach ' + cls2; d.innerHTML = html;
+    achToast.appendChild(d); setTimeout(() => d.remove(), 4500);
+  }
+  function logSeries(result) { (G.seriesLog = G.seriesLog || []).push({ to: G.series.to, w: G.series.w, l: G.series.l, games: G.series.games.slice(), start: G.series.start, end: Date.now(), result }); }
+  // tr: 방금 끝난 포지션 기록(승급전 한 판). 없으면 강등·시작만 확인
+  function updateRank(tr) {
+    let rank = rankNow();
+    const bal = acct.balance;
+    // 1. 강등: 지금 티어 기준 아래로 내려가면 바로
+    if (rank > 0 && bal < TIERS[rank].min) {
+      while (rank > 0 && bal < TIERS[rank].min) rank--;
+      if (G.series) { logSeries('cancel'); G.series = null; }
+      G.rank = rank; tierToast(rank, false); sfx('tierDown'); saveG();
+      return;
+    }
+    // 2. 승급전 한 판
+    if (G.series && tr) {
+      const se = G.series, res = tr.pnl >= SERIES_WIN_USDT ? 'W' : tr.pnl < 0 ? 'L' : 'D';
+      se.games.push(res);
+      if (res === 'W') se.w++; else if (res === 'L') se.l++;
+      if (se.w >= SERIES_WINS) {
+        logSeries('win'); const to = se.to; G.series = null; G.seriesCool = 0;
+        G.rank = rank = to; G.promoWins = (G.promoWins || 0) + 1; if (se.l === 0) G.promoPerfect = true;
+        tierToast(to, true); sfx('tierUp');
+      } else if (se.l > SERIES_GAMES - SERIES_WINS) {
+        logSeries('fail'); G.series = null; G.seriesCool = SERIES_COOLDOWN;
+        seriesToast(`<span class="ai">😵</span><div><div class="dim" style="font-size:11px">승급전 실패</div><b>${TIERS[se.to].name} 승급전 ${se.w}승 ${se.l}패</b><div class="dim" style="font-size:11.5px">매매 ${SERIES_COOLDOWN}번 뒤 다시 도전할 수 있어요</div></div>`, 'bad');
+        sfx('tierDown');
+      } else {
+        const lab = res === 'W' ? ['✅', '승급전 승리', 'up'] : res === 'L' ? ['❌', '승급전 패배', 'down'] : ['➖', '무승부 (판수에 안 셈)', 'dim'];
+        seriesToast(`<span class="ai">${lab[0]}</span><div><div class="dim" style="font-size:11px">${TIERS[se.to].name} 승급전</div><b class="${lab[2]}">${lab[1]} ${usdS(tr.pnl)}</b><div class="dim" style="font-size:11.5px">${seriesText(se)}</div></div>`);
+      }
+    } else if (tr && G.seriesCool > 0) G.seriesCool--;
+    // 3. 승급전 중 잔고가 기준 아래로 → 취소
+    if (G.series && bal < TIERS[G.series.to].min) {
+      const se = G.series; logSeries('cancel'); G.series = null;
+      seriesToast(`<span class="ai">⚠️</span><div><div class="dim" style="font-size:11px">승급전 취소</div><b>잔고가 ${TIERS[se.to].name} 기준(${usd(TIERS[se.to].min)}) 아래로 내려갔어요</b></div>`, 'bad');
+    }
+    // 4. 승급전 시작
+    if (!G.series && rank < TIERS.length - 1 && bal >= TIERS[rank + 1].min && !(G.seriesCool > 0)) {
+      G.series = { to: rank + 1, w: 0, l: 0, games: [], start: Date.now() };
+      const t = TIERS[rank + 1];
+      seriesToast(`<span class="ai">⚔️</span><div><div class="dim" style="font-size:11px">승급전 시작</div><b style="color:${t.c1}">${t.name} 승급전 — 5판 중 3승</b><div class="dim" style="font-size:11.5px">포지션 하나를 끝까지 청산하면 한 판. +$${SERIES_WIN_USDT} 이상이면 승리, 손실이면 패배, 그 사이는 무승부</div></div>`, 'go');
+      sfx('ach');
+    }
+    G.rank = rank;
+    G.bestTier = Math.max(G.bestTier || 0, rank);
+    saveG();
   }
   let tierDrawn = null;
   function renderTier() {
-    const i = tierIndex(acct.balance), key = i + ':' + Math.round(acct.balance);
-    if (G.tier == null) G.tier = i;
-    if (i !== G.tier) { tierToast(i, i > G.tier); sfx(i > G.tier ? 'tierUp' : 'tierDown'); G.tier = i; }
-    G.bestTier = Math.max(G.bestTier || 0, i);
+    updateRank(null);
+    const i = rankNow(), se = G.series;
+    const key = [i, Math.round(acct.balance), se && se.games.join(''), G.seriesCool].join(':');
     if (tierDrawn !== key) { $('gTier').innerHTML = tierBlock(i, 46); tierDrawn = key; }
   }
   const toast = document.createElement('div'); toast.id = 'gToast'; document.body.appendChild(toast);
@@ -399,7 +474,7 @@
 
   // ------------------------------------------------------------ 시작 화면
   const home = document.createElement('div'); home.id = 'gHome';
-  home.innerHTML = `<a class="back" href="replay.html">← 차트 리플레이</a><div class="card">
+  home.innerHTML = `<div class="card">
     <div class="ico" id="gHomeIco"></div><div class="tname" id="gHomeTier"></div><div class="ten" id="gHomeTen"></div>
     <div class="kick">CHART GAME</div><h1>차트게임</h1>
     <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 5분봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 50턴, 시드 3,000 USDT로 시작해 계속 이어집니다.</p>
@@ -410,7 +485,7 @@
     <div class="gtier" id="gHomeNext" style="margin:4px 2px 12px; text-align:left"></div>
     <button class="go" id="gGo">게임 시작</button>
     <button class="go2" id="gDaily">📅 오늘의 차트</button>
-    <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#262b3c">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#262b3c">⌨ 단축키 (?)</button></div>
+    <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#232326">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#232326">⌨ 단축키 (?)</button></div>
     <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
       <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
     <div class="note" id="gHomeNote">초기 시드 3,000 USDT 고정 · 잔고 초기화 없음 · 레버리지 3배 · 격리</div></div>`;
@@ -449,7 +524,27 @@
     if (firstTurn < 0 || firstTurn < PRE - 4 || out.length - firstTurn < TURNS) return null;
     return { rows: out, firstTurn };
   }
+  // ---- 내 최근 매매로 만든 판 (make_my_rounds.py 가 만든 data/game/my_index.json, 내 컴퓨터에만 있음)
+  let mine = null;
+  async function buildMyWindow(m) {
+    const all = await loadFile(m.file);
+    const rows = all.map((a) => ({ ...a })), firstTurn = rows.findIndex((a) => a.t === m.start);
+    if (firstTurn < PRE - 4 || rows.length - firstTurn < TURNS) return null;
+    return { rows, firstTurn };
+  }
+  const minePick = (m) => ({ short: m.short, name: m.name, symbol: m.symbol, pk: 'mine', start: m.start, sources: m.sources, mine: m.id });
+  const mineLeft = () => (mine ? mine.rounds.filter((r) => !(G.minePlayed || []).includes(r.id)) : []);
   async function pickRound() {
+    const left = mineLeft();
+    if (left.length && Math.random() < 0.5) {             // 새 종목 두 번에 한 번꼴로 내 매매 차트
+      const m = left[Math.floor(Math.random() * left.length)];
+      const w = await buildMyWindow(m).catch(() => null);
+      (G.minePlayed = G.minePlayed || []).push(m.id);
+      if (w) return { pick: minePick(m), w };
+    }
+    return pickCoinRound();
+  }
+  async function pickCoinRound() {
     const coins = index.coins, last = G.rounds.length ? G.rounds[G.rounds.length - 1] : null;
     for (let tries = 0; tries < 50; tries++) {
       const c = coins[Math.floor(Math.random() * coins.length)];
@@ -523,7 +618,7 @@
     G.n = (G.n || 0) + 1;
     G.rounds.push({ n: G.n, short: r.short, name: r.name, symbol: r.symbol, from: bars[r.firstTurn].t, to: bars[cursor].t, turns: r.turn,
       entries: mine.length, pnl: acct.balance - r.startBal, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,
-      playMs: r.playMs || 0, tierFrom: tierIndex(r.startBal), tierTo: tierIndex(acct.balance), rid: r.id, daily: r.daily || null });
+      playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null });
     const h = G.rounds[G.rounds.length - 1];
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
     try { roundExtra(r, h); } catch (e) { console.error(e); }
@@ -536,6 +631,12 @@
     renderInfo(); renderPos(); renderTurn(); renderMarkers();
     showResult();
   }
+  function mineLine(h) {                    // 내 매매로 만든 판이면, 그때 실제로 한 매매를 보여 준다
+    const m = h.mine && mine && mine.rounds.find((x) => x.id === h.mine);
+    if (!m || !m.trade) return '';
+    const t = m.trade, long = t.side === 'long', hm = (s) => origFmt(s).slice(11);
+    return `<div class="gmine">🔁 <b>그때 실제 내 매매</b> <span class="${long ? 'up' : 'down'}">${long ? '롱' : '숏'}</span> ${hm(t.open)}${t.entry ? ` @${fmtP(t.entry)}` : ''} → ${hm(t.close)}${t.exit ? ` @${fmtP(t.exit)}` : ''} · 손익 <b class="${cls(t.pnl)}">${usdS(t.pnl)}</b></div>`;
+  }
   function showResult() {
     const h = G.rounds[G.rounds.length - 1]; if (!h) return;
     const pct = h.pnl / h.startCash * 100;
@@ -547,8 +648,9 @@
       reviewSummary(h.review) +
       ((h.ach || []).length ? `<div class="gresach">${h.ach.map((k) => { const a = ACH.find((x) => x.k === k); return a ? `<span>${a.ico} ${a.name}</span>` : ''; }).join('')}</div>` : '') +
       (h.daily ? `<div style="margin-top:8px; color:#f0b90b; font-weight:700">📅 오늘의 차트 완료</div>` : '') +
-      `<div><button id="gResNext">다음종목 (N)</button> <button id="gResRev" style="background:#262b3c">복기 보기</button>` +
-      (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2b3f6b">📅 오늘의 차트</button>` : '') + `</div>`;
+      mineLine(h) +
+      `<div><button id="gResNext">다음종목 (N)</button> <button id="gResRev" style="background:#232326">복기 보기</button>` +
+      (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2c2c31">📅 오늘의 차트</button>` : '') + `</div>`;
     $('gResult').style.display = 'flex';
     countUp($('gResBody').querySelector('.bigp'), h.pnl, (v) => `${usdS(v)} (${sgn(v / h.startCash * 100)}%)`);
     $('gResNext').onclick = () => startRound();
@@ -671,10 +773,12 @@
     { k: 'h1', ico: '⏱', name: '1시간', desc: '플레이타임 1시간', any: () => (G.playMs || 0) >= 3600000 },
     { k: 'h10', ico: '⌛', name: '10시간', desc: '플레이타임 10시간', any: () => (G.playMs || 0) >= 36000000 },
     { k: 'h100', ico: '🏛️', name: '100시간', desc: '플레이타임 100시간', any: () => (G.playMs || 0) >= 360000000 },
-    { k: 'silver', ico: '🥈', name: '실버 달성', desc: '실버 티어 (잔고 10,000)', any: () => (G.bestTier || 0) >= 2 },
-    { k: 'gold', ico: '🏅', name: '골드 달성', desc: '골드 티어 (잔고 50,000)', any: () => (G.bestTier || 0) >= 3 },
-    { k: 'diamond', ico: '💎', name: '다이아 달성', desc: '다이아 티어 (잔고 500,000)', any: () => (G.bestTier || 0) >= 5 },
-    { k: 'challenger', ico: '👑', name: '챌린저 달성', desc: '챌린저 티어 (잔고 10,000,000)', any: () => (G.bestTier || 0) >= 8 },
+    { k: 'silver', ico: '🥈', name: '실버 달성', desc: '실버 티어 승급', any: () => (G.bestTier || 0) >= 2 },
+    { k: 'gold', ico: '🏅', name: '골드 달성', desc: '골드 티어 승급', any: () => (G.bestTier || 0) >= 3 },
+    { k: 'diamond', ico: '💎', name: '다이아 달성', desc: '다이아 티어 승급', any: () => (G.bestTier || 0) >= 5 },
+    { k: 'challenger', ico: '👑', name: '챌린저 달성', desc: '챌린저 티어 승급', any: () => (G.bestTier || 0) >= 8 },
+    { k: 'promo1', ico: '⚔️', name: '첫 승급', desc: '승급전 처음 통과하기', any: () => (G.promoWins || 0) >= 1 },
+    { k: 'promoPerfect', ico: '🧹', name: '무패 승급', desc: '승급전을 한 판도 지지 않고 통과', any: () => !!G.promoPerfect },
     { k: 'daily1', ico: '📅', name: '오늘의 차트', desc: '오늘의 차트 처음 끝내기', any: () => dailyDone() >= 1 },
     { k: 'daily7', ico: '🗓️', name: '오늘의 차트 7번', desc: '오늘의 차트 7번 끝내기 (날짜 상관없이)', any: () => dailyDone() >= 7 },
   ];
@@ -743,7 +847,7 @@
   function dailyText(d) {
     const x = G.daily[d]; if (!x || !x.done) return '';
     return `📈 차트게임 · 오늘의 차트 ${d.slice(5).replace('-', '/')}\n결과 ${x.pct >= 0 ? '+' : ''}${x.pct.toFixed(2)}% ${x.emoji || '⬜'}\n` +
-      `포지션 ${x.entries}번${x.cap != null ? ` · 평균 포착률 ${Math.round(x.cap * 100)}%` : ''} · ${TIERS[tierIndex(acct.balance)].name}`;
+      `포지션 ${x.entries}번${x.cap != null ? ` · 평균 포착률 ${Math.round(x.cap * 100)}%` : ''} · ${TIERS[rankNow()].name}`;
   }
   async function copyDaily(d) {
     const t = dailyText(d); if (!t) return;
@@ -831,10 +935,10 @@
       bands.map((z) => `<rect x="${L}" y="${y(z.b)}" width="${W - L - R}" height="${y(z.a) - y(z.b)}" fill="${z.t.c1}" opacity=".07"/>` +
         `<text x="${L - 6}" y="${(y(z.a) + y(z.b)) / 2 + 4}" text-anchor="end" fill="${z.t.c1}" font-size="11">${z.t.name}</text>` +
         (z.a > lo ? `<line x1="${L}" x2="${W - R}" y1="${y(z.a)}" y2="${y(z.a)}" stroke="${z.t.c1}" stroke-opacity=".35" stroke-dasharray="3 3"/>` : '')).join('') +
-      `<line x1="${L}" x2="${W - R}" y1="${y(SEED)}" y2="${y(SEED)}" stroke="#868b98" stroke-opacity=".5"/>` +
-      `<polyline fill="none" stroke="#5b8def" stroke-width="2" points="${pts.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>` +
+      `<line x1="${L}" x2="${W - R}" y1="${y(SEED)}" y2="${y(SEED)}" stroke="#8a8a93" stroke-opacity=".5"/>` +
+      `<polyline fill="none" stroke="#a1a1aa" stroke-width="2" points="${pts.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>` +
       pts.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${pts.length > 60 ? 1.5 : 3}" fill="${TIERS[tierIndex(v)].c1}"><title>${i ? `#${rs[i - 1].n} ${rs[i - 1].name}` : '시작'} · 잔고 ${usd(v)}</title></circle>`).join('') +
-      `<text x="${L}" y="${H - 6}" fill="#868b98" font-size="11">시작</text><text x="${W - R}" y="${H - 6}" fill="#868b98" font-size="11" text-anchor="end">${rs.length}종목</text></svg>`;
+      `<text x="${L}" y="${H - 6}" fill="#8a8a93" font-size="11">시작</text><text x="${W - R}" y="${H - 6}" fill="#8a8a93" font-size="11" text-anchor="end">${rs.length}종목</text></svg>`;
   }
   function renderStats() {
     const tr = trades.filter((t) => !(hidden() && t.round === G.round.id)), rs = G.rounds, a = statsOf(tr);   // 진행 중인 종목은 이름이 드러나지 않게 빼고 셈
@@ -999,6 +1103,7 @@
   }
   function onRoundStart(r) {
     touchSession(); G.sess.rounds++;
+    r.rankStart = rankNow();
     Object.assign(r, { session: G.sess.id, sessIdx: G.sess.rounds, streakStart: streakNow(), hourKst: +origFmt(Math.floor(Date.now() / 1000)).slice(11, 13), thinkSec: [], logv: LOG_VER });
     lastRevealAt = Date.now();
   }
@@ -1020,7 +1125,7 @@
       app: 'chart-replay 차트게임', format: 'chart-game-analysis', version: LOG_VER, exportedAtKst: origFmt(Math.floor(Date.now() / 1000)),
       rules: { seedUsdt: SEED, leverage: LEV, marginMode: '격리', feePct: FEE_PCT, turnsPerRound: TURNS, barSec: 300, preBars: PRE },
       notes: ['가격 % 는 소수 (0.01 = 1%)', 'R = 손익 ÷ 처음 손절까지의 손실액 (진입 때 손절가가 있을 때만)', 'ctx 는 진입 순간까지 보인 봉으로만 계산', '시각은 KST 문자열과 UTC 초를 함께'],
-      account: { balance: acct.balance, tier: TIERS[tierIndex(acct.balance)].name, bestTier: TIERS[G.bestTier || 0].name, playHours: r4((G.playMs || 0) / 3600000), achievements: Object.keys(G.ach || {}) },
+      account: { balance: acct.balance, tier: TIERS[rankNow()].name, series: G.series || null, seriesLog: G.seriesLog || [], bestTier: TIERS[G.bestTier || 0].name, playHours: r4((G.playMs || 0) / 3600000), achievements: Object.keys(G.ach || {}) },
       rounds: rs.map((h) => ({ ...h, review: h.review ? { ...h.review, trades: undefined } : null, fromKst: origFmt(h.from), toKst: origFmt(h.to) })),
       trades: tr.map((t, i) => ({ i: i + 1, roundN: rmap[t.round] ? rmap[t.round].n : null, coin: t.symbol, side: t.side, inKst: origFmt(t.t_in), outKst: origFmt(t.t_out), ...t })),
       orders: orders.filter((o) => o.round !== live).map((o) => ({ ...o, tKst: origFmt(o.t), ftKst: o.ft ? origFmt(o.ft) : null })),
@@ -1302,7 +1407,7 @@
     setTimeout(() => box.remove(), 2200);
     if (reduceMotion) return;
     if (win) {                               // 수익: 색종이 터짐 (크면 더 많이)
-      const n = kind === 'big' ? 46 : 22, cols = kind === 'big' ? ['#ffd54f', '#26a69a', '#5b8def', '#ff8a65', '#fff'] : ['#26a69a', '#7be0c3', '#ffd54f', '#fff'];
+      const n = kind === 'big' ? 46 : 22, cols = kind === 'big' ? ['#ffd54f', '#26a69a', '#a1a1aa', '#ff8a65', '#fff'] : ['#26a69a', '#7be0c3', '#ffd54f', '#fff'];
       for (let i = 0; i < n; i++) {
         const p = document.createElement('i'); p.className = 'fxBit';
         const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * (kind === 'big' ? 180 : 110);
@@ -1322,6 +1427,10 @@
     baseTradeHookFx(tr);
     if (isTrade(tr) && tr.reason !== 'round') { try { closeFx(tr); } catch (e) { console.error(e); } }
   };
+
+  // 승급전: 포지션이 끝까지 청산될 때마다 한 판 (수수료·펀딩까지 뺀 순손익으로)
+  const baseTradeHookRank = tradeHook;
+  tradeHook = function (tr) { baseTradeHookRank(tr); if (isTrade(tr)) { try { updateRank(tr); tierDrawn = null; } catch (e) { console.error(e); } } };
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
@@ -1354,7 +1463,7 @@
     $('gHomeEq').textContent = usd(acct.balance);
     $('gHomeRoi').textContent = sgn(roi) + '%'; $('gHomeRoi').className = 'r num ' + cls(roi);
     $('gGo').textContent = G.round || G.rounds.length ? '게임 이어하기' : '게임 시작';
-    const i = tierIndex(acct.balance), t = TIERS[i];
+    const i = rankNow(), t = TIERS[i];
     $('gHomeIco').innerHTML = tierSvg(i, 118);
     $('gHomeIco').style.background = `radial-gradient(circle, ${t.c2}66 0%, #1b2030 68%, transparent 71%)`;
     $('gHomeTier').textContent = t.name; $('gHomeTier').style.color = t.c1;
@@ -1364,7 +1473,8 @@
     const ds = dailyState();
     $('gDaily').textContent = ds.rec ? (ds.rec.done ? `📅 오늘의 차트 완료 (${sgn(ds.rec.pct)}%) · 결과 복사` : '📅 오늘의 차트 진행 중 → [게임 이어하기]') : '📅 오늘의 차트 (하루 한 번)';
     const nx = TIERS[i + 1], pct = nx ? Math.max(0, Math.min(100, (acct.balance - t.min) / (nx.min - t.min) * 100)) : 100;
-    $('gHomeNext').innerHTML = `<div style="flex:1"><div class="dim" style="font-size:12px">${nx ? `다음 티어 <b style="color:${nx.c1}">${nx.name}</b>까지 ${usd(nx.min - acct.balance)}` : '최고 티어에 도착했어요'}</div>` +
+    $('gHomeNext').innerHTML = G.series ? `<div style="flex:1"><div class="gseries"><b style="color:${TIERS[G.series.to].c1}">${TIERS[G.series.to].name} 승급전 진행 중</b> ${seriesDots(G.series)}</div><div class="dim" style="font-size:11.5px">${seriesText(G.series)}</div></div>`
+      : `<div style="flex:1"><div class="dim" style="font-size:12px">${nx ? (acct.balance >= nx.min && G.seriesCool > 0 ? `승급전 다시 도전까지 매매 ${G.seriesCool}번` : `<b style="color:${nx.c1}">${nx.name}</b> 승급전까지 ${usd(Math.max(0, nx.min - acct.balance))}`) : '최고 티어에 도착했어요'}</div>` +
       `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div></div>`;
     $('gTierList').innerHTML = TIERS.map((x, k) => `<div class="${k === i ? 'me' : ''}">${tierSvg(k, 40)}<b style="color:${x.c1}">${x.name}</b><span class="dim">${usd(Math.max(x.min, k ? x.min : SEED)).replace('.00', '')}${k ? '~' : ' 시작'}</span></div>`).join('');
   }
@@ -1375,8 +1485,12 @@
     home.style.display = 'none';
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));   // 차트 크기가 잡힌 뒤
     if (G.round) {
-      const c = index.coins.find((x) => x.short === G.round.short);
-      const w = c && c.periods[G.round.pk] ? await buildWindow(c.periods[G.round.pk], G.round.start) : null;
+      let w = null;
+      if (G.round.mine) { const m = mine && mine.rounds.find((x) => x.id === G.round.mine); w = m ? await buildMyWindow(m).catch(() => null) : null; }
+      else {
+        const c = index.coins.find((x) => x.short === G.round.short);
+        w = c && c.periods[G.round.pk] ? await buildWindow(c.periods[G.round.pk], G.round.start) : null;
+      }
       if (w) { showWindow(w, G.round); return true; }
       G.round = null; open = null; pendEntry = null; reduces = [];   // 데이터가 바뀌어 같은 차트를 못 찾으면 새로
     }
@@ -1399,12 +1513,14 @@
   };
   (async () => {
     try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
+    try { mine = JSON.parse(await fetchText('data/game/my_index.json')); } catch (e) { mine = null; }   // 없으면 원래 30종목만
+    if (mine && mine.rounds && mine.rounds.length) $('gHomeNote').innerHTML += `<br>🔁 내 최근 매매 차트 ${mine.rounds.length}판이 섞여 나와요 (남은 ${mineLeft().length}판)`;
     if (!index || !index.coins || !index.coins.length) {
       $('gGo').disabled = true; $('gDaily').disabled = true;
       // 왜 못 여는지 경우별로: 공개 사이트 링크 · 파일 더블클릭(file://) · 데이터를 아직 안 받음
       const zip = 'https://github.com/tmdwbk/chart-replay/archive/refs/heads/main.zip';
       const how = `<ol style="text-align:left; margin:8px 0 0; padding-left:18px; line-height:1.7">` +
-        `<li><a href="${zip}" style="color:#5b8def">여기서 ZIP 받기</a> → 압축 풀기 (마우스 오른쪽 → 압축 풀기)</li>` +
+        `<li><a href="${zip}" style="color:#a1a1aa">여기서 ZIP 받기</a> → 압축 풀기 (마우스 오른쪽 → 압축 풀기)</li>` +
         `<li>풀린 폴더에서 <b>START-CHART-GAME.bat</b> 더블클릭 (맥은 <b>start_game.command</b>)</li>` +
         `<li>까만 창이 알아서 준비하고 브라우저로 게임을 열어요. 그 창은 켜 두세요.</li></ol>`;
       const where = location.protocol === 'file:' ? '파일을 더블클릭해서 열면 차트 데이터를 읽을 수 없어요.'
