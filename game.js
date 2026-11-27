@@ -230,6 +230,28 @@
     @keyframes fxBig { 0% { transform:translate(-50%,-50%) scale(2.2); opacity:0; } 18% { transform:translate(-50%,-50%) scale(1); opacity:1; } 80% { opacity:1; } 100% { transform:translate(-50%,-62%) scale(.96); opacity:0; } }
     .fbadge.ghost { opacity:.55; outline:1px dashed rgba(255,255,255,.7); font-size:9px; }
     .sring { display:inline-flex; border-radius:50%; padding:2px; box-shadow:0 0 0 2px var(--rc), 0 0 12px var(--rc); }
+    #gDown { position:absolute; inset:0; z-index:20; display:none; align-items:center; justify-content:center; text-align:center; background:rgba(8,8,10,.92); padding:20px; }
+    #gDown button { margin-top:14px; background:#e4e4e7; color:#0b0b0c; border:none; border-radius:10px; padding:10px 24px; font-weight:700; }
+    #gMob { display:none; }
+    @media (max-width: 900px) {
+      .bar { flex-wrap:nowrap; overflow-x:auto; gap:6px; padding:6px 8px; scrollbar-width:none; }
+      .bar::-webkit-scrollbar { display:none; }
+      .bar > .dim, .bar label, #speed, #btnStep10, #btnPlay, #gKeyBtn { display:none !important; }
+      .bar > * { white-space:nowrap; flex:none; }
+      #gPlayTop { padding:3px 8px; font-size:12px; }
+      #info { font-size:12px; gap:8px; padding:4px 8px; }
+      #info span:last-child { display:none; }
+      #tools, #drawBar, #legend { display:none !important; }
+      #chartRow { height:58vh !important; min-height:300px; }
+      #gMob { display:grid; grid-template-columns:1.2fr 1.1fr 1.2fr .9fr 1fr; gap:6px; position:fixed; left:0; right:0; bottom:0; z-index:60;
+        padding:8px 8px calc(8px + env(safe-area-inset-bottom)); background:rgba(11,11,12,.96); border-top:1px solid #2a2a2e; }
+      #gMob button { height:48px; border-radius:10px; border:1px solid #3a3a40; background:#232326; color:#e4e4e7; font-size:14px; font-weight:700; touch-action:manipulation; }
+      #gMob button.b { background:#1f7a4d; border-color:#1f7a4d; color:#fff; } #gMob button.s { background:#c2454f; border-color:#c2454f; color:#fff; }
+      #gMob button:disabled { opacity:.4; }
+      body { padding-bottom:calc(72px + env(safe-area-inset-bottom)); }
+      #gHome .card { width:calc(100vw - 24px); padding:22px 16px; }
+      .gm { padding:12px; } .gscs { grid-template-columns:repeat(2, 1fr); } .g2 { grid-template-columns:1fr; }
+    }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -632,7 +654,7 @@
     } catch (e) {
       console.error(e);
       G.round = prevRound; saveG();             // 실패하면 앞 종목 상태로 되돌려 다시 누를 수 있게
-      flash('차트를 불러오지 못했어요: ' + e.message, 6000);
+      if (/fetch|응답|Failed|NetworkError|load/i.test(String(e && e.message))) serverDown(); else flash('차트를 불러오지 못했어요: ' + e.message, 6000);
     } finally { starting = false; renderTurn(); }
   }
   function endRound(why) {
@@ -1700,6 +1722,35 @@
   showWindow = function (w, r) { cancelAnim(); baseShowWindowFx(w, r); paintStreak(); paintPromo(); paintTimerBtn(); };
   paintTimerBtn();
   window.addEventListener('tiers-local', () => { tierDrawn = null; try { renderTier(); renderHome(); } catch (e) {} });   // 내 엠블럼 그림을 찾으면 다시 그림
+
+  function serverDown() {                   // 게임 서버(까만 창·맥 앱)가 꺼져 있을 때
+    let el = $('gDown');
+    if (!el) { el = document.createElement('div'); el.id = 'gDown'; $('chartRow').appendChild(el); }
+    el.innerHTML = `<div><div style="font-size:40px">🔌</div><b>게임 서버가 꺼져 있어요</b><div class="dim" style="margin-top:6px; line-height:1.6">브라우저가 예전에 받아 둔 화면만 보여 주고 있어요.<br>맥에서 <b>차트게임 앱</b>을 누르거나 까만 창(START-CHART-GAME / start_game.py)을 다시 켠 뒤 새로고침하세요.</div><button onclick="location.reload()">새로고침</button></div>`;
+    el.style.display = 'flex';
+  }
+
+  // ---- 휴대폰: 아래에 늘 보이는 주문 줄 (매수·다음·매도·청산·다음종목). 넓은 화면에선 숨김
+  const mob = document.createElement('div'); mob.id = 'gMob';
+  mob.innerHTML = '<button data-a="long" class="b">매수</button><button data-a="step">다음 ▶</button><button data-a="short" class="s">매도</button><button data-a="close">청산</button><button data-a="next">다음종목</button>';
+  document.body.appendChild(mob);
+  mob.addEventListener('click', (e) => {
+    const a = e.target.closest('button') && e.target.closest('button').dataset.a; if (!a) return;
+    if (a === 'long' || a === 'short') submit(a);
+    else if (a === 'step') step(1);
+    else if (a === 'close') closePos();
+    else if (a === 'next') { if (G.round && (G.round.done || !$('gNext').disabled)) nextCoin(); else flash('5초 뒤에 넘길 수 있어요.', 1500); }
+  });
+  function paintMob() {
+    const r = G && G.round, live = !!(r && !r.done);
+    mob.querySelector('[data-a="close"]').disabled = !open;
+    mob.querySelector('[data-a="step"]').disabled = !live;
+    const L = mob.querySelector('[data-a="long"]'), S = mob.querySelector('[data-a="short"]');
+    L.textContent = open ? (open.side === 'long' ? '추가 매수' : '매수·청산') : '매수';
+    S.textContent = open ? (open.side === 'short' ? '추가 매도' : '매도·청산') : '매도';
+  }
+  const baseRenderPosMob = renderPos;
+  renderPos = function () { baseRenderPosMob(); try { paintMob(); } catch (e) {} };
 
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
