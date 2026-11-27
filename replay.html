@@ -1269,6 +1269,7 @@ function submit(side) {
     if (!v) { flash('지정가를 적어 주세요. [현재가]를 누르면 지금 가격이 채워져요.'); return; }
     rest = long ? v < cur : v > cur;
     if (rest) px = v;
+    else if (GAME_MODE) { rest = true; px = cur; }   // 차트게임 = Post Only (2026-11-27): 바로 체결되는 지정가는 지금 가격에 걸어 두고 다음 봉에서 닿으면 메이커로 체결
   }
   const o = orderBase(side); if (!o) return;
   const adding = !!open;
