@@ -252,6 +252,16 @@
       #gHome .card { width:calc(100vw - 24px); padding:22px 16px; }
       .gm { padding:12px; } .gscs { grid-template-columns:repeat(2, 1fr); } .g2 { grid-template-columns:1fr; }
     }
+    #gDrillBar { position:absolute; left:50%; bottom:34px; transform:translateX(-50%); z-index:7; display:none; gap:8px; align-items:center; max-width:92%;
+      padding:5px 12px; border-radius:16px; background:rgba(20,20,24,.92); border:1px solid #52525b; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gdrill { margin-top:10px; padding:10px 12px; border:1px solid #3f3f46; border-radius:10px; background:#141416; text-align:left; }
+    .gdrill input { background:#1f1f22; border:1px solid #3a3a40; color:#e4e4e7; border-radius:8px; padding:6px 8px; }
+    .gdrill button { margin-top:0 !important; padding:6px 12px !important; font-size:12px !important; }
+    .rstep { display:flex; gap:10px; padding:10px 0; border-top:1px solid #2a2a2e; }
+    .rstep .rn { width:26px; height:26px; flex:none; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#232326; border:1px solid #52525b; font-weight:800; }
+    .rstep.done .rn { background:#e4e4e7; color:#0b0b0c; } .rstep.done b { color:#a1a1aa; text-decoration:line-through; }
+    .rstep input { background:#1f1f22; border:1px solid #3a3a40; color:#e4e4e7; border-radius:6px; padding:4px 6px; }
+    .rstep button.rec { border-color:#e4e4e7; color:#fff; }
     .ga-top { display:flex; justify-content:space-between; align-items:flex-end; }
     .ga-roi { font-size:26px; font-weight:700; } .ga-eq { font-size:20px; font-weight:700; color:#fff; }
     .ga-line { border-top:1px solid var(--line); margin:6px 0 2px; }
@@ -520,8 +530,8 @@
     <div class="ico" id="gHomeIco"></div><div class="tname" id="gHomeTier"></div><div class="ten" id="gHomeTen"></div>
     <div class="kick">CHART GAME</div><h1>차트게임</h1>
     <p>거래량이 많았던 때의 주요 알트코인 30개 차트를 ${BAR_LABEL}봉으로 랜덤하게 돌려 보며 직관을 키우는 연습이에요. 종목 하나에 ${TURNS}턴, 시드 3,000 USDT로 시작해 계속 이어집니다.</p>
-    <div class="row"><span class="l">평가자산</span><span class="r num" id="gHomeEq">-</span></div>
-    <div class="row"><span class="l">시드 대비</span><span class="r num" id="gHomeRoi">-</span></div>
+    <div class="row"><span class="l">총 점수</span><span class="r num" id="gHomeEq">-</span></div>
+    <div class="row"><span class="l">최근 10매매 평균</span><span class="r num" id="gHomeRoi">-</span></div>
     <div class="row"><span class="l">플레이타임</span><span class="r num" id="gHomePlay">-</span></div>
     <div class="row"><span class="l">업적</span><span class="r num" id="gHomeAch">-</span></div>
     <div class="gtier" id="gHomeNext" style="margin:4px 2px 12px; text-align:left"></div>
@@ -529,7 +539,7 @@
     <button class="go2" id="gDaily">📅 오늘의 차트</button>
     <div style="display:flex; gap:8px"><button class="go2" id="gHomeStats" style="background:#232326">📊 전적 (T)</button><button class="go2" id="gHomeKeys" style="background:#232326">⌨ 단축키 (?)</button></div>
     <button class="go2" id="gHomeGhost" style="background:#1f1f22">👻 친구 고스트 불러오기 (오늘의 차트)</button>
-    <button class="go2" id="gHomeReset" style="background:transparent; border:1px solid #3a3a40; color:#a1a1aa; font-weight:500">↺ 시드 초기화 (3,000 USDT로)</button>
+    <button class="go2" id="gHomeReset" style="background:transparent; border:1px solid #3a3a40; color:#a1a1aa; font-weight:500">↺ 점수·티어 처음부터</button>
     <details><summary>티어 표 보기</summary><div class="tlist" id="gTierList"></div>
       <div style="margin-top:8px; line-height:1.5">티어는 <b>잔고</b>(청산해서 확정된 금액) 기준이에요. 잔고가 줄면 티어도 내려가요. 플레이타임은 게임 화면을 보고 있고 3분 안에 키·마우스를 움직였을 때만 세요.</div></details>
     <div class="note" id="gHomeNote">초기 시드 3,000 USDT · 레버리지 3배 · 격리</div></div>`;
@@ -668,8 +678,9 @@
     const mine = trades.filter((t) => t.round === r.id);
     G.n = (G.n || 0) + 1;
     G.rounds.push({ n: G.n, short: r.short, name: r.name, symbol: r.symbol, from: bars[r.firstTurn].t, to: bars[cursor].t, turns: r.turn,
-      entries: mine.length, pnl: mine.length ? acct.balance - r.startBal : 0, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,   // 매매 안 하고 넘기면 손익 0
-      playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null });
+      entries: mine.length, pnl: mine.reduce((a, t) => a + (t.pnl || 0), 0),   /* 잔고를 안 쓰므로 그 종목 매매 손익 합 */ startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,   // 매매 안 하고 넘기면 손익 0
+      playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null, drill: r.drill || null,
+      score: Math.round(mine.reduce((a, t) => a + ((t.score && t.score.total) || 0), 0) * 10) / 10, R: Math.round(mine.reduce((a, t) => a + ((t.score && t.score.R) || 0), 0) * 100) / 100, scoreAfter: G.score || 0 });
     const h = G.rounds[G.rounds.length - 1];
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
     try { roundExtra(r, h); } catch (e) { console.error(e); }
@@ -693,8 +704,8 @@
     const pct = h.pnl / h.startCash * 100;
     $('gResBody').innerHTML = `<div class="dim">${h.why} · 종목 공개</div><h2>${h.name} (${h.short})</h2>` +
       `<div class="dim num">${origFmt(h.from)} ~ ${origFmt(h.to)} KST · ${BAR_LABEL}봉 · ${h.symbol}</div>` +
-      `<div class="bigp num ${cls(h.pnl)}">${usdS(h.pnl)} (${sgn(pct)}%)</div>` +
-      `<div class="dim">포지션 ${h.entries}번${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 잔고 ${usd(h.endCash)} · 플레이 ${fmtDur(h.playMs || 0)}</div>` +
+      `<div class="bigp num ${cls(h.score || 0)}">${(h.score || 0) > 0 ? '+' : ''}${(h.score || 0).toFixed(1)}점</div>` +
+      `<div class="dim">손익 <span class="${cls(h.pnl)}">${h.R != null ? (h.R > 0 ? '+' : '') + h.R.toFixed(2) + 'R · ' : ''}${usdS(h.pnl)} (${sgn(pct)}%)</span> · 포지션 ${h.entries}번${h.liq ? ' · <span class="down">강제 청산 있음</span>' : ''} · 총 점수 ${(h.scoreAfter || 0).toFixed(1)} · 플레이 ${fmtDur(h.playMs || 0)}</div>` +
       (h.tierTo != null && h.tierTo !== h.tierFrom ? `<div style="margin-top:6px; color:${TIERS[h.tierTo].c1}; font-weight:700">${h.tierTo > h.tierFrom ? '티어 승급' : '티어 강등'}: ${TIERS[h.tierFrom].name} → ${TIERS[h.tierTo].name}</div>` : '') +
       reviewSummary(h.review) +
       ((h.ach || []).length ? `<div class="gresach">${h.ach.map((k) => { const a = ACH.find((x) => x.k === k); return a ? `<span>${a.ico} ${a.name}</span>` : ''; }).join('')}</div>` : '') +
@@ -703,7 +714,7 @@
       `<div><button id="gResNext">다음종목 (F)</button> <button id="gResRev" style="background:#232326">복기 보기</button>` +
       (h.daily ? ` <button id="gResShare" style="background:#8a6d1a">결과 복사</button> <button id="gResGhost" style="background:#232326">👻 친구 고스트</button>` : !dailyState().rec ? ` <button id="gResDaily" style="background:#2c2c31">📅 오늘의 차트</button>` : '') + `</div>`;
     $('gResult').style.display = 'flex';
-    countUp($('gResBody').querySelector('.bigp'), h.pnl, (v) => `${usdS(v)} (${sgn(v / h.startCash * 100)}%)`);
+    countUp($('gResBody').querySelector('.bigp'), h.score || 0, (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}점`);
     $('gResNext').onclick = () => startRound();
     $('gResRev').onclick = () => { $('gResult').style.display = 'none'; openTab('review'); };
     if ($('gResShare')) $('gResShare').onclick = () => copyDaily(h.daily);
@@ -993,6 +1004,17 @@
     return { n: list.length, win: list.length ? w.length / list.length : 0, pnl: sw + sl, avgW: w.length ? sw / w.length : 0, avgL: l.length ? sl / l.length : 0,
       pf: sl < 0 ? sw / -sl : null, rr: w.length && l.length ? (sw / w.length) / (-sl / l.length) : null, exp: list.length ? (sw + sl) / list.length : 0 };
   }
+  function scoreChart() {                    // 총 점수 추이 + 티어 띠 (선형)
+    const pts = [0].concat((G.scoreLog || []).map((l) => l.after)), W = 640, H = 210, L = 64, R = 10, T = 10, B = 24;
+    if (pts.length < 2) return '<div class="empty">매매를 끝내면 점수 그래프가 그려져요.</div>';
+    const ti = tierIndex(Math.max(...pts)), hi = Math.max(...pts, TIERS[Math.min(ti + 1, TIERS.length - 1)].min * 1.1), lo = Math.min(0, ...pts);
+    const y = (v) => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B), x = (i) => L + i / (pts.length - 1) * (W - L - R);
+    const bands = TIERS.map((t, k) => ({ t, a: Math.max(lo, t.min), b: Math.min(hi, TIERS[k + 1] ? TIERS[k + 1].min : hi) })).filter((z) => z.b > z.a);
+    return `<svg viewBox="0 0 ${W} ${H}" class="gchart">` +
+      bands.map((z) => `<rect x="${L}" y="${y(z.b)}" width="${W - L - R}" height="${y(z.a) - y(z.b)}" fill="${z.t.c1}" opacity=".07"/><text x="${L - 6}" y="${(y(z.a) + y(z.b)) / 2 + 4}" text-anchor="end" fill="${z.t.c1}" font-size="11">${z.t.name}</text>`).join('') +
+      `<polyline fill="none" stroke="#e4e4e7" stroke-width="2" points="${pts.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>` +
+      `<text x="${L}" y="${H - 6}" fill="#868b98" font-size="11">시작</text><text x="${W - R}" y="${H - 6}" fill="#868b98" font-size="11" text-anchor="end">${pts.length - 1}매매 · ${pts[pts.length - 1].toFixed(1)}점</text></svg>`;
+  }
   function balChart(rs) {
     const pts = [SEED].concat(rs.map((x) => x.endCash)), W = 640, H = 210, L = 64, R = 10, T = 10, B = 24;
     if (pts.length < 2) return '<div class="empty">종목을 끝내면 잔고 그래프가 그려져요.</div>';
@@ -1033,7 +1055,7 @@
     const roundsBy = {}; for (const r of rs) roundsBy[r.symbol] = (roundsBy[r.symbol] || 0) + 1;
     const symRows = Object.entries(bySym).map(([k, v]) => ({ k, v, s: statsOf(v) })).sort((p, q) => q.s.pnl - p.s.pnl);
     const why = {}; for (const t of tr) { const k = t.liq ? '강제청산' : ({ tp: '익절가', sl: '손절가', reduce: '지정가 청산', round: '종목 끝', manual: '시장가' })[t.reason] || t.reason; why[k] = (why[k] || 0) + 1; }
-    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><span><button id="gReset" title="잔고를 3,000 USDT로">↺ 시드 초기화</button> <button id="gExport" title="실력 분석용: JSON(전부) + CSV(포지션 한 줄씩)">⬇ 분석용 내보내기</button> <button data-x>닫기 (Esc)</button></span></div>` +
+    statBox.innerHTML = `<div class="gm" style="width:760px"><div class="gmh"><b>📊 전적</b><span><button id="gReset" title="점수·티어를 처음부터">↺ 점수 처음부터</button> <button id="gExport" title="실력 분석용: JSON(전부) + CSV(포지션 한 줄씩)">⬇ 분석용 내보내기</button> <button data-x>닫기 (Esc)</button></span></div>` +
       `<div class="gscs">${card('끝낸 종목', rs.length)}${card('이긴 종목', rs.length ? pctS(rs.filter((x) => x.pnl > 0).length / rs.length) : '-')}${card('포지션', a.n)}${card('포지션 승률', a.n ? pctS(a.win) : '-')}` +
       `${card('평균 손익비', a.rr != null ? a.rr.toFixed(2) : '-')}${card('포지션당 기대값', a.n ? usdS(a.exp) : '-', cls(a.exp))}${card('총 실현 손익', usdS(a.pnl), cls(a.pnl))}${card('낸 수수료', usd(fees))}` +
       `${card('최다 연승 / 연패', `${best} / ${worst}`)}${card('최대 낙폭 (종목 끝 잔고)', mdd ? '-' + (mdd * 100).toFixed(1) + '%' : '0%', mdd ? 'down' : '')}${card('플레이타임', fmtDur(G.playMs || 0))}${card('업적', `${ACH.filter((x) => (G.ach || {})[x.k]).length}/${ACH.length}`)}</div>` +
@@ -1041,7 +1063,7 @@
       `<div class="gscs">${card('이긴 포지션 평균 포착률', pf(hab.cap))}${card('수익→손실 전환율', hab.gb == null ? '-' : `${pf(hab.gb)} <small class="dim">(${hab.gbN})</small>`, hab.gb > 0.3 ? 'down' : '')}` +
       `${card('이긴 포지션: 청산 뒤 더 간 폭', hab.postFav == null ? '-' : '+' + (hab.postFav * 100).toFixed(2) + '%')}${card('일찍 판 비율', pf(hab.early), hab.early > 0.5 ? 'down' : '')}</div>` +
       `<div class="dim" style="font-size:11.5px; margin-top:4px">수익→손실 = 한때 +1% 이상 갔던 포지션 중 손실로 끝난 비율 · 청산 뒤 = 청산하고 10턴 안에 같은 방향으로 더 간 폭(가격 기준) · 일찍 판 비율 = 이긴 포지션 중 청산 뒤에 더 간 폭이 내가 가져간 폭보다 큰 비율</div>` +
-      `<h4>잔고 · 티어 변화 <span class="dim" style="font-weight:400">(종목이 끝날 때 잔고, 세로는 로그 눈금)</span></h4>${balChart(rs)}` +
+      `<h4>점수 · 티어 변화 <span class="dim" style="font-weight:400">(매매가 끝날 때마다 총 점수)</span></h4>${scoreChart()}` +
       `<div class="g2"><div><h4>롱 · 숏</h4><table class="gst"><tr><th></th><th>횟수</th><th>승률</th><th>손익</th><th>기대값</th><th>손익비</th></tr>${sideRow('<span class="up">롱</span>', tr.filter((t) => t.side === 'long'))}${sideRow('<span class="down">숏</span>', tr.filter((t) => t.side === 'short'))}</table>` +
       `<h4>청산 방식</h4><div class="gwhy">${Object.entries(why).sort((p, q) => q[1] - p[1]).map(([k, v]) => `<div><span>${k}</span><i style="width:${v / Math.max(1, tr.length) * 100}%"></i><b>${v}</b></div>`).join('') || '<span class="dim">아직 없음</span>'}</div></div>` +
       `<div><h4>코인별</h4><div style="max-height:260px; overflow:auto"><table class="gst"><tr><th>종목</th><th>판</th><th>포지션</th><th>승률</th><th>손익</th></tr>${symRows.map((r) => `<tr><td>${r.k.replace(/USDT$/, '')}</td><td>${roundsBy[r.k] || 0}</td><td>${r.s.n}</td><td>${pctS(r.s.win)}</td><td class="${cls(r.s.pnl)}">${usdS(r.s.pnl)}</td></tr>`).join('') || '<tr><td colspan="5" class="dim">아직 없음</td></tr>'}</table></div></div></div>` +
@@ -1753,6 +1775,232 @@
   const baseRenderPosMob = renderPos;
   renderPos = function () { baseRenderPosMob(); try { paintMob(); } catch (e) {} };
 
+  // ============================================================ 2026-11-27 승주: 잔고 → 점수, 점수로 티어, 시장가 없앰, 하루 루틴·훈련
+  // ---- 시장가 없앰: 주문 칸은 지정가만. 직접 청산(X·버튼·C·부분 청산)은 '지정가 추격 청산'으로
+  { const mt = document.querySelector('#side .tabs [data-t="market"]'); if (mt) mt.classList.add('gHide'); }
+  orderType = 'limit';
+  const baseSubmitM = submit;
+  submit = function (side) { orderType = 'limit'; return baseSubmitM(side); };
+  const baseClosePosM = closePos;
+  closePos = function (fp, reason) {
+    if (fp == null && reason == null && open && cursor >= 0 && G.round && !G.round.done) {   // 사람이 누른 청산 → 지정가 추격
+      if (reduces.some((r) => r.chase && r.amt >= open.notional * 0.999)) { flash('이미 지정가 청산 주문이 걸려 있어요. 다음 봉에서 닿으면 체결돼요.', 2500); return; }
+      placeChase(open.notional);
+      return;
+    }
+    return baseClosePosM(fp, reason);
+  };
+  partialClose = function (amt) { if (!open) return; placeChase(Math.min(amt, open.notional)); };
+  if ($('btnPartial')) $('btnPartial').textContent = '지정가로 이만큼 청산 (추격)';
+  if ($('btnClose')) $('btnClose').innerHTML = '지정가 청산 <kbd>X</kbd>';
+
+  // ---- 점수: 매매(포지션 하나를 끝까지 청산)마다 과정 + 결과
+  //   과정(최대 +10): 스탑 주문 +3 · 익절 주문 +2 · 계획 손익비 1.2 이상 +2 · 손실이 −1R 안 +2 · 원칙(손실 뒤 30분 안 재진입·물타기·스탑 넓힘 없음) +1
+  //   결과: 1R 당 3점 (−6 ~ +9), 강제청산이면 −10 더. 그래서 원칙대로 진 매매도 보통 플러스
+  const SC = { stop: 3, tp: 2, rr: 2, risk: 2, rule: 1, perR: 3, rMin: -6, rMax: 9, liq: -10, rrMin: 1.2, rrTol: 0.05, demote: 20 };
+  const firstSet = (log, entryTurn) => { const s = (log || []).find((z) => z.from == null && z.to != null); return s && entryTurn != null && s.turn != null && s.turn - entryTurn <= 5 ? s.to : null; };
+  function tradeRisk(tr) {                    // 진입 때(또는 5턴 안에) 건 스탑·익절과 계획 손익비
+    const x = tr.x || {}, e = (tr.fills && tr.fills[0] && tr.fills[0].price) || tr.entry;
+    const sl = x.slEntry != null ? x.slEntry : firstSet(x.slLog, x.entryTurn);
+    const tp = x.tpEntry != null ? x.tpEntry : firstSet(x.tpLog, x.entryTurn);
+    const rr = sl != null && tp != null && Math.abs(e - sl) > 0 ? Math.abs(tp - e) / Math.abs(e - sl) : null;
+    const stopPct = sl != null ? Math.abs(e - sl) / e : 0.05;                        // 스탑이 없으면 5%를 1R 로
+    const n0 = (tr.fills && tr.fills[0] && tr.fills[0].notional) || tr.notional || 1000;
+    const R = tr.pnl / (n0 * stopPct);
+    return { sl, tp, rr, R, e };
+  }
+  function scoreTrade(tr) {
+    const x = tr.x || {}, k = tradeRisk(tr), parts = [];
+    if (k.sl != null) parts.push(['스탑 주문', SC.stop]);
+    if (k.tp != null) parts.push(['익절 주문', SC.tp]);
+    if (k.rr != null && k.rr >= SC.rrMin - SC.rrTol) parts.push([`손익비 ${k.rr.toFixed(2)}`, SC.rr]);
+    if (k.sl != null && k.R >= -1.05) parts.push(['손실 −1R 안', SC.risk]);
+    const broke = (x.afterPrev && x.afterPrev.prevLoss && x.afterPrev.turns < 30) || (x.addsLosing > 0) || (x.slAway > 0);
+    if (!broke) parts.push(['원칙 지킴', SC.rule]);
+    const proc = parts.reduce((a, p) => a + p[1], 0);
+    const res = Math.max(SC.rMin, Math.min(SC.rMax, k.R * SC.perR)) + (tr.liq ? SC.liq : 0);
+    return { proc, res: Math.round(res * 10) / 10, total: Math.round((proc + res) * 10) / 10, parts, R: Math.round(k.R * 100) / 100, rr: k.rr };
+  }
+  const f1 = (v) => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10).toFixed(1);
+  function scoreMigrate() {                   // 처음 한 번: 점수제로 바꾸며 티어는 아이언부터 (2026-11-27). loadG 뒤에 부른다
+    if (G.scoreV) return;
+    G.scoreV = 1; G.score = 0; G.rank = 0; G.series = null; G.seriesCool = 0; G.scoreLog = []; acct.balance = SEED; acct.start = SEED; saveG();
+  }
+  const baseTradeHookS = tradeHook;
+  tradeHook = function (tr) {
+    baseTradeHookS(tr);
+    if (!isTrade(tr)) return;
+    try {
+      const sc = scoreTrade(tr);
+      tr.score = sc;
+      G.score = Math.round(((G.score || 0) + sc.total) * 10) / 10;
+      (G.scoreLog = G.scoreLog || []).push({ t: Date.now(), round: tr.round, total: sc.total, proc: sc.proc, res: sc.res, after: G.score });
+      acct.balance = SEED;                    // 잔고는 쓰지 않는다: 주문용으로 늘 3,000 고정
+      tierDrawn = null; updateRank(null);
+      seriesToast(`<span class="ai">${sc.total >= 0 ? '⭐' : '💢'}</span><div><div class="dim" style="font-size:11px">이번 매매 점수</div><b class="${sc.total >= 0 ? 'up' : 'down'}">${f1(sc.total)}점</b> <span class="dim">(과정 ${sc.proc} · 결과 ${f1(sc.res)})</span><div class="dim" style="font-size:11px">${sc.parts.map((p) => p[0]).join(' · ') || '과정 점수 없음'}</div></div>`);
+    } catch (e) { console.error(e); }
+  };
+  // 티어: 점수가 기준을 넘으면 바로 승급 (승급전 없음). 기준보다 20점 아래로 떨어질 때만 강등
+  updateRank = function () {
+    let rank = rankNow(); const sc = G.score || 0;
+    G.series = null;
+    let up = rank;
+    while (up < TIERS.length - 1 && sc >= TIERS[up + 1].min) up++;
+    if (up > rank) { G.rank = up; G.promoWins = (G.promoWins || 0) + 1; tierToast(up, true); sfx('tierUp'); }
+    else if (rank > 0 && sc < TIERS[rank].min - SC.demote) { let d = rank; while (d > 0 && sc < TIERS[d].min - SC.demote) d--; G.rank = d; tierToast(d, false); sfx('tierDown'); }
+    G.bestTier = Math.max(G.bestTier || 0, G.rank || 0);
+    saveG();
+  };
+  tierBlock = function (i, size) {
+    const t = TIERS[i], nx = TIERS[i + 1], sc = G.score || 0, ring = ringOf();
+    const pct = nx ? Math.max(0, Math.min(100, (sc - t.min) / (nx.min - t.min) * 100)) : 100;
+    const svg = ring ? `<span class="sring" style="--rc:${ring.c1}" title="지난 시즌 보상 테두리 (${ring.name})">${tierSvg(i, size)}</span>` : tierSvg(i, size);
+    const ss = G.season ? `<div class="dim" style="font-size:10.5px">시즌 ${G.season.id.slice(5)}월 최고 <b style="color:${TIERS[G.season.best].c1}">${TIERS[G.season.best].name}</b></div>` : '';
+    return `${svg}<div style="flex:1; min-width:0"><div class="tn" style="color:${t.c1}">${t.name} <small class="dim" style="font-weight:400">${t.en}</small> <b style="color:#fff; font-size:13px">${sc.toFixed(1)}점</b></div>` +
+      `<div class="dim" style="font-size:11.5px">${nx ? `${nx.name}까지 ${Math.max(0, nx.min - sc).toFixed(1)}점` : '최고 티어'}</div><div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div>${ss}</div>`;
+  };
+  // 자산 칸 → 점수 칸
+  const roundScore = () => trades.filter((t) => G.round && t.round === G.round.id && t.score).reduce((a, t) => a + t.score.total, 0);
+  const roundR = () => trades.filter((t) => G.round && t.round === G.round.id && t.score).reduce((a, t) => a + t.score.R, 0);
+  const baseRenderAcctS = renderAcct;
+  renderAcct = function () {
+    baseRenderAcctS();
+    if (!G) return;
+    const last = [...trades].reverse().find((t) => t.score);
+    $('gRoi').textContent = (G.score || 0).toFixed(1) + '점'; $('gRoi').className = 'ga-roi num';
+    $('gEq').textContent = f1(roundScore()) + '점';
+    $('gCash').innerHTML = last ? `<span class="${last.score.total >= 0 ? 'up' : 'down'}">${f1(last.score.total)}</span> <span class="dim">(과정 ${last.score.proc} · 결과 ${f1(last.score.res)})</span>` : '<span class="dim">-</span>';
+    const rr = roundR(); $('gRpnl').innerHTML = `<span class="${cls(rr)}">${f1(rr)}R</span>`;
+  };
+  [['수익률 <small>(시드 3,000 대비)</small>', '총 점수'], ['평가자산', '이번 종목 점수'], ['현금 (주문 가능)', '마지막 매매 점수'], ['이번 종목 손익', '이번 종목 손익 (R)']].forEach(([a, b]) => {
+    const el = [...document.querySelectorAll('#side .dim')].find((d) => d.innerHTML.trim() === a); if (el) el.innerHTML = b;
+  });
+
+  // ---- 하루 루틴: ① 오늘의 차트 1판 → ② 훈련 3판(추천 훈련 하나) → ③ 훈련 판마다 한 줄 복기 → ④ 주 1회 점검
+  const DRILLS = {
+    tp: { name: '① 익절 지키기', tip: '진입하면서 익절 주문을 걸고, 닿을 때까지 그대로 두기. 일찍 나오지 않기.',
+      score: (ts) => ts.length ? Math.round(ts.filter((t) => tradeRisk(t).tp != null && (t.reason === 'tp' || (t.score && t.score.rr && t.score.R >= t.score.rr * 0.8))).length / ts.length * 100) : null },
+    rr: { name: '② 계획 손익비 1.2', tip: '진입 전에 익절 거리 ÷ 스탑 거리가 1.2 이상인 자리만. 아니면 관망.',
+      score: (ts) => ts.length ? Math.round(ts.filter((t) => { const r = tradeRisk(t).rr; return r != null && r >= SC.rrMin - SC.rrTol; }).length / ts.length * 100) : null },
+    stop: { name: '③ 손절 자리', tip: '진입 전에 스탑을 걸고, 넓히지 않고, 손실은 −1R 안에서 끝내기.',
+      score: (ts) => ts.length ? Math.round(ts.filter((t) => { const k = tradeRisk(t); return k.sl != null && k.R >= -1.05 && !(t.x && t.x.slAway > 0); }).length / ts.length * 100) : null },
+  };
+  const DRILL_N = 3;
+  function recommendDrill() {                 // 최근 매매 20건에서 가장 약한 것
+    const ts = trades.filter((t) => t.score).slice(-20);
+    if (ts.length < 3) return 'tp';
+    let best = 'tp', low = 101;
+    for (const [k, d] of Object.entries(DRILLS)) { const v = d.score(ts); if (v != null && v < low) { low = v; best = k; } }
+    return best;
+  }
+  function routine() {
+    const day = todayKst();
+    G.routine = G.routine || {};
+    const r = G.routine[day] = G.routine[day] || { drill: null, rounds: [] };
+    const drillRounds = G.rounds.filter((h) => h.drill && r.rounds.includes(h.rid));
+    const weeklyDue = !G.weeklyAt || (Date.parse(day) - Date.parse(G.weeklyAt)) / 86400000 >= 7;
+    return { day, r, s1: !!(G.daily && G.daily[day] && G.daily[day].done), drillRounds, s2: drillRounds.length >= DRILL_N, s3: drillRounds.length >= DRILL_N && drillRounds.every((h) => h.note), weeklyDue };
+  }
+  const baseOnRoundStart = onRoundStart;
+  onRoundStart = function (r) {
+    baseOnRoundStart(r);
+    if (G.drillActive && !r.daily) { r.drill = G.drillActive; const ro = routine(); if (!ro.r.rounds.includes(r.id)) ro.r.rounds.push(r.id); }
+  };
+  function startDrill(key) {
+    const ro = routine();
+    ro.r.drill = key; G.drillActive = key; saveG();
+    const go = () => { const r = G.round; if (r && !r.done) { if (!confirm('지금 하던 종목을 끝내고 훈련을 시작할까요?')) return; endRound(`${r.turn}턴에서 넘김`); } $('gResult').style.display = 'none'; startRound(); };
+    if ($('gHome').style.display !== 'none') enterGame().then(() => go()); else go();
+    closeModals();
+  }
+  function drillBanner() {
+    let el = $('gDrillBar');
+    if (!el) { el = document.createElement('div'); el.id = 'gDrillBar'; $('chartRow').appendChild(el); }
+    const r = G && G.round, d = r && r.drill && DRILLS[r.drill];
+    if (!d || r.done) { el.style.display = 'none'; return; }
+    const ro = routine();
+    el.style.display = 'flex';
+    el.innerHTML = `<b>🏋️ 훈련 ${d.name}</b> <span class="dim">${Math.min(DRILL_N, ro.drillRounds.length + 1)}/${DRILL_N}판 · ${d.tip}</span>`;
+  }
+  // 결과 화면: 훈련 점수 + 한 줄 복기 + 루틴 다음 단계
+  const baseShowResultR = showResult;
+  showResult = function () {
+    baseShowResultR();
+    const h = G.rounds[G.rounds.length - 1]; if (!h) return;
+    const mineT = trades.filter((t) => t.round === h.rid);
+    const box = document.createElement('div'); box.className = 'gdrill';
+    let html = '';
+    if (h.drill && DRILLS[h.drill]) {
+      if (h.drillScore === undefined) { h.drillScore = DRILLS[h.drill].score(mineT); saveG(); }
+      html += `<div><b>🏋️ ${DRILLS[h.drill].name}</b> 훈련 점수 <b style="font-size:18px">${h.drillScore == null ? '관망 (매매 없음)' : h.drillScore + '점'}</b></div>` +
+        `<div class="dim" style="font-size:12px">${DRILLS[h.drill].tip}</div>` +
+        `<div style="display:flex; gap:6px; margin-top:6px"><input id="gNote" maxlength="80" placeholder="한 줄 복기: 실전의 나(👻)와 비교해서 다음엔?" value="${(h.note || '').replace(/"/g, '&quot;')}" style="flex:1"><button id="gNoteSave">저장</button></div>`;
+    }
+    const ro = routine();
+    const next = !ro.s1 ? '① 오늘의 차트' : !ro.s2 ? `② 훈련 ${Math.min(DRILL_N, ro.drillRounds.length + 1)}/${DRILL_N}판` : !ro.s3 ? '③ 훈련 판 한 줄 복기' : ro.weeklyDue ? '④ 주간 점검' : '오늘 루틴 끝 🎉';
+    html += `<div class="dim" style="margin-top:8px">오늘의 루틴 · 다음: <b style="color:#fff">${next}</b> <button id="gToRoutine" style="margin-left:6px">루틴 보기</button></div>`;
+    box.innerHTML = html;
+    const btns = $('gResBody').querySelector('#gResNext').parentElement;
+    btns.before(box);
+    if ($('gNoteSave')) $('gNoteSave').onclick = () => { h.note = $('gNote').value.trim(); saveG(); paintRoutineBtn(); flash('한 줄 복기를 저장했어요.', 1500); };
+    $('gToRoutine').onclick = () => openRoutine();
+    // 다음 판: 훈련 중이고 아직 3판이 안 됐으면 훈련 판으로 이어서, 다 했으면 훈련 끝
+    if (G.drillActive && routine().drillRounds.length >= DRILL_N) { G.drillActive = null; saveG(); }
+  };
+  // 루틴 창
+  const rtBox = document.createElement('div'); rtBox.id = 'gRoutine'; rtBox.className = 'gmodal'; document.body.appendChild(rtBox);
+  rtBox.addEventListener('click', (e) => { if (e.target === rtBox) rtBox.style.display = 'none'; });
+  function openRoutine() {
+    const ro = routine(), rec = ro.r.drill || recommendDrill();
+    const step = (n, done, title, body) => `<div class="rstep ${done ? 'done' : ''}"><div class="rn">${done ? '✓' : n}</div><div style="flex:1"><b>${title}</b><div class="dim" style="font-size:12px; margin-top:2px">${body}</div></div></div>`;
+    const notes = ro.drillRounds.map((h, i) => `<div style="display:flex; gap:6px; align-items:center; margin-top:4px"><span class="dim" style="width:150px">${i + 1}판 · ${h.name} · ${h.drillScore == null ? '관망' : h.drillScore + '점'}</span><input data-rid="${h.rid}" maxlength="80" value="${(h.note || '').replace(/"/g, '&quot;')}" placeholder="한 줄 복기" style="flex:1"></div>`).join('');
+    rtBox.innerHTML = `<div class="gm" style="width:560px"><div class="gmh"><b>📋 오늘의 루틴 (15~20분)</b><button data-x>닫기 (Esc)</button></div>` +
+      step(1, ro.s1, '① 준비 1판: 오늘의 차트', ro.s1 ? `끝 (${f1(G.daily[ro.day].pct || 0)}%)` : `<button id="rtDaily">오늘의 차트 하기</button>`) +
+      step(2, ro.s2, `② 훈련 ${DRILL_N}판: 한 가지만`, `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px">${Object.entries(DRILLS).map(([k, d]) => `<button data-drill="${k}" class="${k === rec ? 'rec' : ''}">${d.name}${k === recommendDrill() ? ' · 추천' : ''}</button>`).join('')}</div>` +
+        `<div style="margin-top:4px">${ro.drillRounds.length}/${DRILL_N}판 했어요${ro.r.drill ? ` · 오늘 훈련: ${DRILLS[ro.r.drill].name}` : ''}. 한 주 동안 같은 훈련을 반복하는 게 좋아요.</div>`) +
+      step(3, ro.s3, '③ 복기 1분씩: 실전의 나(👻)와 비교하고 한 줄', ro.drillRounds.length ? notes : '훈련 판을 하면 여기에 판마다 한 줄 칸이 생겨요.') +
+      step(4, !ro.weeklyDue, '④ 주 1회: 훈련 점수 · 실전 숫자 보기', ro.weeklyDue ? `<button id="rtWeekly">주간 점검 열기</button>` : `이번 주 했어요 (${G.weeklyAt})`) +
+      `<div class="dim" style="font-size:11.5px; margin-top:8px">추천 훈련 = 최근 매매 20건에서 가장 약한 항목. 점수: 과정(스탑·익절·손익비 1.2·−1R 안·원칙) + 결과(R).</div></div>`;
+    rtBox.style.display = 'flex';
+    rtBox.querySelector('[data-x]').onclick = () => { rtBox.style.display = 'none'; };
+    if ($('rtDaily')) $('rtDaily').onclick = () => { rtBox.style.display = 'none'; $('gHome').style.display !== 'none' ? $('gDaily').click() : startDaily(); };
+    rtBox.querySelectorAll('[data-drill]').forEach((b) => b.onclick = () => startDrill(b.dataset.drill));
+    rtBox.querySelectorAll('input[data-rid]').forEach((inp) => inp.onchange = () => { const h = G.rounds.find((x) => String(x.rid) === inp.dataset.rid); if (h) { h.note = inp.value.trim(); saveG(); paintRoutineBtn(); } });
+    if ($('rtWeekly')) $('rtWeekly').onclick = () => openWeekly();
+  }
+  function openWeekly() {
+    const now = Date.now(), wk = 7 * 86400000;
+    const logs = G.scoreLog || [];
+    const thisW = logs.filter((l) => now - l.t < wk), prevW = logs.filter((l) => now - l.t >= wk && now - l.t < 2 * wk);
+    const avg = (a, k) => (a.length ? a.reduce((s, x) => s + x[k], 0) / a.length : null);
+    const ts = trades.filter((t) => t.score).slice(-20);
+    const rows = Object.entries(DRILLS).map(([k, d]) => `<tr><td>${d.name}</td><td>${d.score(ts) == null ? '-' : d.score(ts) + '%'}</td></tr>`).join('');
+    const dr = G.rounds.filter((h) => h.drill && h.drillScore != null).slice(-15);
+    rtBox.innerHTML = `<div class="gm" style="width:560px"><div class="gmh"><b>🗓 주간 점검</b><button data-x>닫기</button></div>` +
+      `<div class="gscs" style="grid-template-columns:repeat(3,1fr)"><div class="gsc"><div class="dim">이번 주 매매</div><b>${thisW.length}</b></div><div class="gsc"><div class="dim">평균 점수 (이번 주)</div><b>${avg(thisW, 'total') == null ? '-' : f1(avg(thisW, 'total'))}</b></div><div class="gsc"><div class="dim">평균 점수 (지난주)</div><b>${avg(prevW, 'total') == null ? '-' : f1(avg(prevW, 'total'))}</b></div>` +
+      `<div class="gsc"><div class="dim">평균 과정 점수</div><b>${avg(thisW, 'proc') == null ? '-' : avg(thisW, 'proc').toFixed(1)} / 10</b></div><div class="gsc"><div class="dim">평균 결과 점수</div><b>${avg(thisW, 'res') == null ? '-' : f1(avg(thisW, 'res'))}</b></div><div class="gsc"><div class="dim">최근 훈련 판</div><b>${dr.length}</b></div></div>` +
+      `<h4>게임 기록 최근 20건: 훈련 항목 달성률</h4><table class="gst">${rows}</table>` +
+      `<h4>실전과 비교</h4><div class="dim" style="line-height:1.6">매매일지 사이트(127.0.0.1:8765) 홈의 <b>🎯 계획 손익비 vs 실제 R</b>(익절 실현률·손실 크기)과 위 숫자를 나란히 보세요. 게임에서 오른 항목이 2~3주 뒤 실전에서도 오르면 연습이 옮겨진 거예요. [📊 전적]의 분석용 내보내기 파일을 Claude 에게 보여 줘도 돼요.</div>` +
+      `<button id="wkDone" style="margin-top:12px">이번 주 점검 끝</button></div>`;
+    rtBox.style.display = 'flex';
+    rtBox.querySelector('[data-x]').onclick = () => { rtBox.style.display = 'none'; };
+    $('wkDone').onclick = () => { G.weeklyAt = todayKst(); saveG(); paintRoutineBtn(); openRoutine(); };
+  }
+  // 위 막대 '루틴' 버튼 (진행 상태), 시작 화면 루틴 카드
+  const rtBtn = document.createElement('button'); rtBtn.className = 'gtopb'; rtBtn.id = 'gRtBtn'; rtBtn.onclick = () => { openRoutine(); rtBtn.blur(); };
+  bar.insertBefore(rtBtn, $('gTimerBtn'));
+  function paintRoutineBtn() {
+    if (!G) return;
+    const ro = routine(), done = [ro.s1, ro.s2, ro.s3, !ro.weeklyDue].filter(Boolean).length;
+    rtBtn.textContent = `📋 오늘의 루틴 ${done}/4`;
+    rtBtn.classList.toggle('on', done === 4);
+    const hc = $('gHomeRoutine');
+    if (hc) hc.innerHTML = `📋 오늘의 루틴 ${done}/4 · ${!ro.s1 ? '① 오늘의 차트부터' : !ro.s2 ? `② 훈련 ${ro.drillRounds.length}/${DRILL_N}판` : !ro.s3 ? '③ 한 줄 복기' : ro.weeklyDue ? '④ 주간 점검' : '오늘 끝 🎉'}`;
+  }
+  { const go = $('gGo'); const hb = document.createElement('button'); hb.className = 'go2'; hb.id = 'gHomeRoutine'; hb.style.cssText = 'background:#2c2c31; border:1px solid #52525b'; hb.onclick = () => openRoutine(); go.before(hb); }
+  const baseRenderPosR = renderPos;
+  renderPos = function () { baseRenderPosR(); try { drillBanner(); paintRoutineBtn(); } catch (e) {} };
+
   // 키는 글자(e.key)가 아니라 키 자리(e.code)로 본다: 한글 입력 상태면 e.key 가 'ㅗ'·'ㅜ' 라서 예전엔 안 먹었음
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && closeModals()) { e.preventDefault(); return; }
@@ -1779,10 +2027,12 @@
 
   // ------------------------------------------------------------ 시작
   loadG();
+  scoreMigrate();
   function renderHome() {
     const roi = (acct.balance / SEED - 1) * 100;
-    $('gHomeEq').textContent = usd(acct.balance);
-    $('gHomeRoi').textContent = sgn(roi) + '%'; $('gHomeRoi').className = 'r num ' + cls(roi);
+    $('gHomeEq').textContent = (G.score || 0).toFixed(1) + '점';
+    { const l = (G.scoreLog || []).slice(-10), a = l.length ? l.reduce((s2, x) => s2 + x.total, 0) / l.length : null;
+      $('gHomeRoi').textContent = a == null ? '-' : (a > 0 ? '+' : '') + a.toFixed(1) + '점'; $('gHomeRoi').className = 'r num ' + cls(a || 0); }
     $('gGo').textContent = G.round || G.rounds.length ? '게임 이어하기' : '게임 시작';
     const i = rankNow(), t = TIERS[i];
     $('gHomeIco').innerHTML = tierSvg(i, 118);
@@ -1794,9 +2044,8 @@
     const ds = dailyState();
     $('gDaily').textContent = ds.rec ? (ds.rec.done ? `📅 오늘의 차트 완료 (${sgn(ds.rec.pct)}%) · 결과 복사` : '📅 오늘의 차트 진행 중 → [게임 이어하기]') : '📅 오늘의 차트 (하루 한 번)';
     const nx = TIERS[i + 1], pct = nx ? Math.max(0, Math.min(100, (acct.balance - t.min) / (nx.min - t.min) * 100)) : 100;
-    $('gHomeNext').innerHTML = G.series ? `<div style="flex:1"><div class="gseries"><b style="color:${TIERS[G.series.to].c1}">${TIERS[G.series.to].name} 승급전 진행 중</b> ${seriesDots(G.series)}</div><div class="dim" style="font-size:11.5px">${seriesText(G.series)}</div></div>`
-      : `<div style="flex:1"><div class="dim" style="font-size:12px">${nx ? (acct.balance >= nx.min && G.seriesCool > 0 ? `승급전 다시 도전까지 매매 ${G.seriesCool}번` : `<b style="color:${nx.c1}">${nx.name}</b> 승급전까지 ${usd(Math.max(0, nx.min - acct.balance))}`) : '최고 티어에 도착했어요'}</div>` +
-      `<div class="tbar"><i style="width:${pct}%; background:${t.c1}"></i></div></div>`;
+    { const sc = G.score || 0, pc = nx ? Math.max(0, Math.min(100, (sc - t.min) / (nx.min - t.min) * 100)) : 100;   // 점수제 (2026-11-27)
+      $('gHomeNext').innerHTML = `<div style="flex:1"><div class="dim" style="font-size:12px">${nx ? `<b style="color:${nx.c1}">${nx.name}</b>까지 ${Math.max(0, nx.min - sc).toFixed(1)}점` : '최고 티어에 도착했어요'}</div><div class="tbar"><i style="width:${pc}%; background:${t.c1}"></i></div></div>`; }
     $('gTierList').innerHTML = TIERS.map((x, k) => `<div class="${k === i ? 'me' : ''}">${tierSvg(k, 40)}<b style="color:${x.c1}">${x.name}</b><span class="dim">${usd(Math.max(x.min, k ? x.min : SEED)).replace('.00', '')}${k ? '~' : ' 시작'}</span></div>`).join('');
   }
   renderHome();
@@ -1829,12 +2078,12 @@
   // 시드 초기화 (2026-11-25 승주 요청): 잔고 3,000 · 티어 아이언 · 승급전·연승/연패 처음부터. 하던 종목은 버리고 새로.
   // 지난 기록(종목·포지션·주문 기록, 업적, 플레이타임, 시즌 기록)은 그대로 두고, 초기화한 때를 기록에 남긴다.
   function resetSeed() {
-    if (!confirm(`시드를 ${SEED.toLocaleString()} USDT로 초기화할까요?\n\n· 잔고 ${usd(acct.balance)} → ${usd(SEED)}\n· 티어 ${TIERS[rankNow()].name} → ${TIERS[0].name}, 진행 중인 승급전·연승 기록도 처음부터\n· 하던 종목(들고 있는 포지션·대기 주문 포함)은 버리고 새로 시작\n· 지난 종목·포지션 기록, 업적, 플레이타임은 그대로 남아요\n\n되돌릴 수 없어요.`)) return;
+    if (!confirm(`점수와 티어를 처음부터 할까요?\n\n· 점수 ${(G.score || 0).toFixed(1)} → 0\n· 티어 ${TIERS[rankNow()].name} → ${TIERS[0].name}, 연승 기록도 처음부터\n· 하던 종목(들고 있는 포지션·대기 주문 포함)은 버리고 새로 시작\n· 지난 종목·포지션 기록, 업적, 플레이타임은 그대로 남아요\n\n되돌릴 수 없어요.`)) return;
     (G.resets = G.resets || []).push({ at: Date.now(), balance: acct.balance, rank: rankNow() });
     for (const o of orders) if (o.status === '대기') o.status = '취소';
     open = null; pendEntry = null; reduces = [];
     acct.balance = SEED; acct.start = SEED;
-    G.rank = 0; G.series = null; G.seriesCool = 0; G.streakW = 0; G.streakL = 0; G.round = null;
+    G.rank = 0; G.series = null; G.seriesCool = 0; G.streakW = 0; G.streakL = 0; G.round = null; G.score = 0; G.scoreLog = [];
     saveG();
     location.reload();
   }

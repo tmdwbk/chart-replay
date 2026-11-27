@@ -1,15 +1,15 @@
-// 차트게임 티어: 잔고(실현 손익까지 반영된 현금) 기준 9단계. 기준을 넘으면 승급전(5판 3승)을 거쳐 오른다 (2026-11-24 기준값 조정).
+// 차트게임 티어: 점수 기준 9단계 (2026-11-27 잔고 → 점수, 쉽게: 기준을 넘으면 바로 승급, 20점 아래로 떨어질 때만 강등).
 // 엠블럼은 이 사이트에서 직접 그린 SVG (게임 회사 그림을 가져오지 않음). 색만 흔히 쓰는 티어 색 느낌으로.
 const TIERS = [
   { key: 'iron',        name: '아이언',       en: 'IRON',         min: 0,        c1: '#8a817c', c2: '#3d3836', gem: '#b9b0aa' },
-  { key: 'bronze',      name: '브론즈',       en: 'BRONZE',       min: 4000,     c1: '#cd8f5c', c2: '#5e3b22', gem: '#f0b483' },
-  { key: 'silver',      name: '실버',         en: 'SILVER',       min: 6000,    c1: '#dfe6ee', c2: '#6f7c8a', gem: '#ffffff' },
-  { key: 'gold',        name: '골드',         en: 'GOLD',         min: 10000,    c1: '#ffd966', c2: '#9a6a12', gem: '#fff1b8' },
-  { key: 'platinum',    name: '플래티넘',     en: 'PLATINUM',     min: 15000,   c1: '#5fe0d2', c2: '#1b6e68', gem: '#c8fff8' },
-  { key: 'diamond',     name: '다이아',       en: 'DIAMOND',      min: 30000,   c1: '#8fb4ff', c2: '#3442b8', gem: '#e3ecff' },
-  { key: 'master',      name: '마스터',       en: 'MASTER',       min: 40000,  c1: '#d29bff', c2: '#5b1a96', gem: '#f3e1ff' },
-  { key: 'grandmaster', name: '그랜드마스터', en: 'GRANDMASTER',  min: 50000,  c1: '#ff8a8a', c2: '#8f1515', gem: '#ffe0e0' },
-  { key: 'challenger',  name: '챌린저',       en: 'CHALLENGER',   min: 100000, c1: '#ffe9a3', c2: '#2a8fd6', gem: '#e9fbff' },
+  { key: 'bronze',      name: '브론즈',       en: 'BRONZE',       min: 30,     c1: '#cd8f5c', c2: '#5e3b22', gem: '#f0b483' },
+  { key: 'silver',      name: '실버',         en: 'SILVER',       min: 80,    c1: '#dfe6ee', c2: '#6f7c8a', gem: '#ffffff' },
+  { key: 'gold',        name: '골드',         en: 'GOLD',         min: 150,    c1: '#ffd966', c2: '#9a6a12', gem: '#fff1b8' },
+  { key: 'platinum',    name: '플래티넘',     en: 'PLATINUM',     min: 250,   c1: '#5fe0d2', c2: '#1b6e68', gem: '#c8fff8' },
+  { key: 'diamond',     name: '다이아',       en: 'DIAMOND',      min: 400,   c1: '#8fb4ff', c2: '#3442b8', gem: '#e3ecff' },
+  { key: 'master',      name: '마스터',       en: 'MASTER',       min: 600,  c1: '#d29bff', c2: '#5b1a96', gem: '#f3e1ff' },
+  { key: 'grandmaster', name: '그랜드마스터', en: 'GRANDMASTER',  min: 850,  c1: '#ff8a8a', c2: '#8f1515', gem: '#ffe0e0' },
+  { key: 'challenger',  name: '챌린저',       en: 'CHALLENGER',   min: 1200, c1: '#ffe9a3', c2: '#2a8fd6', gem: '#e9fbff' },
 ];
 function tierIndex(bal) { let i = 0; for (let k = 0; k < TIERS.length; k++) if (bal >= TIERS[k].min) i = k; return i; }
 

@@ -1154,7 +1154,7 @@ function renderBottom() {
       `<td>${fmtP(o.entry)}${addsOf(o) ? `<br><span class="dim">추가매수 ${addsOf(o)}회</span>` : ''}</td><td class="dim">${fmtP(liqPrice(o))}</td><td>${fmtP(beP(o))}</td>` +
       `<td><span style="color:#42a5f5">${o.tp != null ? fmtP(o.tp) : '-'}</span> / <span style="color:#ba68c8">${o.sl != null ? fmtP(o.sl) : '-'}</span></td>` +
       `<td>${fmtP(p)}</td><td>${usd(o.margin)}</td><td class="dim">${fmtKst(o.t)}</td>` +
-      `<td><button id="bHalf">50% 청산</button> <button id="bClose">시장가 청산</button></td></tr></tbody></table>`;
+      `<td><button id="bHalf">50% 청산</button> <button id="bClose">지정가 청산</button></td></tr></tbody></table>`;
     $('bClose').onclick = () => closePos();
     $('bHalf').onclick = () => partialClose(open.notional / 2);
     return;
