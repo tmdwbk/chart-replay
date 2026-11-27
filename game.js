@@ -668,7 +668,7 @@
     const mine = trades.filter((t) => t.round === r.id);
     G.n = (G.n || 0) + 1;
     G.rounds.push({ n: G.n, short: r.short, name: r.name, symbol: r.symbol, from: bars[r.firstTurn].t, to: bars[cursor].t, turns: r.turn,
-      entries: mine.length, pnl: acct.balance - r.startBal, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,
+      entries: mine.length, pnl: mine.length ? acct.balance - r.startBal : 0, startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,   // 매매 안 하고 넘기면 손익 0
       playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null });
     const h = G.rounds[G.rounds.length - 1];
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
@@ -715,7 +715,8 @@
     const r = G.round;
     if (r && !r.done) {
       if (Date.now() - r.startedAt < LOCK_MS) return;
-      endRound(`${r.turn}턴에서 넘김`);
+      endRound(`${r.turn}턴에서 넘김`);           // 넘겨도 바로 다음 종목으로 가지 않고 결과(종목 공개·수익률)를 먼저 보여 준다 (2026-11-27)
+      return;                                      // 결과 화면에서 F 를 한 번 더 누르거나 [다음종목] 을 누르면 넘어감
     }
     startRound();
   }
