@@ -1138,14 +1138,23 @@
   };
   const baseSubmit = submit;
   submit = function (side) { pendingDecision = Math.round((Date.now() - lastRevealAt) / 100) / 10; return baseSubmit(side); };
+  function stopEntry(k, side, from, to, t, turn) {
+    const away = k === 'sl' && from != null && to != null && (side === 'long' ? to < from : to > from);   // 손절을 더 멀리
+    return { t, turn, from, to, away: !!away, removed: from != null && to == null };
+  }
   function trackStops() {               // 손절·익절이 바뀌었으면 기록 (입력·드래그·취소 어느 길이든 renderPos 를 거침)
     if (!open || !open.x) return;
     const L = (k, log) => {
       const now = open[k] ?? null, was = open['_' + k];
       if (now === was) return;
-      const away = k === 'sl' && was != null && now != null && (open.side === 'long' ? now < was : now > was);   // 손절을 더 멀리
-      log.push({ t: nowT(), turn: G.round ? G.round.turn : null, from: was, to: now, away: !!away, removed: was != null && now == null });
+      const turn = G.round ? G.round.turn : null, last = log[log.length - 1];
       open['_' + k] = now;
+      if (last && turn != null && last.turn === turn) {   // 같은 턴 안에서 다시 고침 = 위치 맞추기 → 그 턴의 처음 값에서 마지막 값으로 한 번
+        log.pop();
+        if (last.from !== now) log.push(stopEntry(k, open.side, last.from, now, last.t, turn));
+        return;
+      }
+      log.push(stopEntry(k, open.side, was, now, nowT(), turn));
     };
     L('sl', open.x.slLog); L('tp', open.x.tpLog);
   }
@@ -1832,6 +1841,32 @@
     if (G.scoreV) return;
     G.scoreV = 1; G.score = 0; G.rank = 0; G.series = null; G.seriesCool = 0; G.scoreLog = []; acct.balance = SEED; acct.start = SEED; saveG();
   }
+  function mergeTurns(log, k, side) {
+    const out = [];
+    for (const z of log || []) {
+      const last = out[out.length - 1];
+      if (last && z.turn != null && last.turn === z.turn) { out.pop(); if (last.from !== z.to) out.push(stopEntry(k, side, last.from, z.to, last.t, z.turn)); }
+      else out.push(z);
+    }
+    return out;
+  }
+  function stopFixMigrate() {               // 2026-11-28: 이미 쌓인 매매도 같은 턴 조정을 합치고 점수·종목 점수를 다시 계산
+    if (!G || G.stopFixV) return;
+    let delta = 0;
+    for (const tr of trades) {
+      const x = tr.x; if (!x || !x.slLog) continue;
+      x.slLog = mergeTurns(x.slLog, 'sl', tr.side); x.tpLog = mergeTurns(x.tpLog, 'tp', tr.side);
+      x.slMoves = x.slLog.length; x.slAway = x.slLog.filter((z) => z.away).length; x.slRemoved = x.slLog.some((z) => z.removed);
+      if (tr.score) { const sc = scoreTrade(tr); delta += sc.total - tr.score.total; tr.score = sc; }
+    }
+    for (const h of G.rounds || []) {
+      const ts = trades.filter((t) => t.round === h.rid && t.score); if (!ts.length) continue;
+      h.score = Math.round(ts.reduce((a, t) => a + t.score.total, 0) * 10) / 10;
+      h.R = Math.round(ts.reduce((a, t) => a + (t.score.R || 0), 0) * 100) / 100;
+    }
+    if (Math.abs(delta) > 1e-9) G.score = Math.round(((G.score || 0) + delta) * 10) / 10;
+    G.stopFixV = 1; saveG();
+  }
   const baseTradeHookS = tradeHook;
   tradeHook = function (tr) {
     baseTradeHookS(tr);
@@ -2068,6 +2103,7 @@
   // ------------------------------------------------------------ 시작
   loadG();
   scoreMigrate();
+  try { stopFixMigrate(); } catch (e) { console.error(e); }
   function renderHome() {
     const roi = (acct.balance / SEED - 1) * 100;
     $('gHomeEq').textContent = (G.score || 0).toFixed(1) + '점';
