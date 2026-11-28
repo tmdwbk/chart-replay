@@ -173,6 +173,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):                           # 요청마다 줄이 쌓이지 않게
         pass
 
+    def do_GET(self):
+        if self.path.split("?")[0] == "/api/refresh-mine":
+            body = json.dumps(refresh_mine(), ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
+
+# 내 매매 판 새로 만들기 (2026-11-28 승주: 오늘의 루틴에서 전날 매매 복기).
+# 이 컴퓨터에 매매일지 DB 가 있을 때만 make_my_rounds.py 를 돌린다 (친구 컴퓨터는 DB 가 없어서 아무것도 안 함).
+# 게임이 켜질 때 한 번 부르고, 10분 안에 또 부르면 다시 돌리지 않는다.
+MINE_DB = Path(os.environ.get("CHART_GAME_DB") or Path.home() / "scalp-journal" / "data" / "scalp.db")
+_mine_lock = threading.Lock()
+_mine_last = {"at": 0.0, "res": None}
+
+
+def refresh_mine():
+    if not MINE_DB.exists():
+        return {"ok": False, "why": "no-db"}
+    with _mine_lock:
+        if time.time() - _mine_last["at"] < 600 and _mine_last["res"]:
+            return _mine_last["res"]
+        try:
+            r = subprocess.run([sys.executable, str(HERE / "make_my_rounds.py"), "--db", str(MINE_DB)],
+                               cwd=str(HERE), capture_output=True, text=True, timeout=300)
+            res = {"ok": r.returncode == 0, "msg": (r.stdout.strip().splitlines() or [""])[-1]}
+        except Exception as e:
+            res = {"ok": False, "why": type(e).__name__}
+        _mine_last.update(at=time.time(), res=res)
+        return res
+
 
 def port_free(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

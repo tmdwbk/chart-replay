@@ -589,6 +589,12 @@
   const minePick = (m) => ({ short: m.short, name: m.name, symbol: m.symbol, pk: 'mine', start: m.start, sources: m.sources, mine: m.id });
   const mineLeft = () => (mine ? mine.rounds.filter((r) => !(G.minePlayed || []).includes(r.id)) : []);
   async function pickRound() {
+    // 어제 매매 복기 (2026-11-28): 줄에 남은 판이 있으면 그 판을 순서대로
+    while (G.yrevQueue && G.yrevQueue.length && mine && mine.rounds) {
+      const id = G.yrevQueue.shift(), m = mine.rounds.find((x) => x.id === id);
+      const w = m ? await buildMyWindow(m).catch(() => null) : null;
+      if (w) { (G.minePlayed = G.minePlayed || []).push(m.id); return { pick: { ...minePick(m), yrev: G.yrevDay || null }, w }; }
+    }
     // 내 매매 판이 있으면 그것만 나온다 (모든 차트에 '그때 실전의 나' 고스트). 다 했으면 가장 덜 한 판부터 다시.
     if (mine && mine.rounds && mine.rounds.length) {
       const played = G.minePlayed || [], cnt = (id) => played.filter((x) => x === id).length;
@@ -679,7 +685,7 @@
     G.n = (G.n || 0) + 1;
     G.rounds.push({ n: G.n, short: r.short, name: r.name, symbol: r.symbol, from: bars[r.firstTurn].t, to: bars[cursor].t, turns: r.turn,
       entries: mine.length, pnl: mine.reduce((a, t) => a + (t.pnl || 0), 0),   /* 잔고를 안 쓰므로 그 종목 매매 손익 합 */ startCash: r.startBal, endCash: acct.balance, liq: mine.some((t) => t.liq), why,   // 매매 안 하고 넘기면 손익 0
-      playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null, drill: r.drill || null,
+      playMs: r.playMs || 0, tierFrom: r.rankStart ?? tierIndex(r.startBal), tierTo: rankNow(), rid: r.id, daily: r.daily || null, mine: r.mine || null, drill: r.drill || null, yrev: r.yrev || null,
       score: Math.round(mine.reduce((a, t) => a + ((t.score && t.score.total) || 0), 0) * 10) / 10, R: Math.round(mine.reduce((a, t) => a + ((t.score && t.score.R) || 0), 0) * 100) / 100, scoreAfter: G.score || 0 });
     const h = G.rounds[G.rounds.length - 1];
     try { h.review = buildReview(r); } catch (e) { console.error(e); h.review = null; }
@@ -1893,18 +1899,37 @@
     for (const [k, d] of Object.entries(DRILLS)) { const v = d.score(ts); if (v != null && v < low) { low = v; best = k; } }
     return best;
   }
+  // ---- 어제 매매 복기 (2026-11-28 승주): 오늘 전 '가장 최근에 매매한 날'(7일 안)의 내 매매 판을 몇 번이고 다시
+  const kstDay = (sec) => origFmt(sec).slice(0, 10);
+  function yrevState(day) {
+    const rs = (mine && mine.rounds || []).filter((m) => m.trade && kstDay(m.trade.close) < day);
+    const last = rs.reduce((a, m) => (kstDay(m.trade.close) > a ? kstDay(m.trade.close) : a), '');
+    const age = last ? (Date.parse(day) - Date.parse(last)) / 86400000 : 99;
+    const list = age <= 7 ? rs.filter((m) => kstDay(m.trade.close) === last).sort((a, b) => a.trade.open - b.trade.open) : [];
+    const today = G.rounds.filter((h) => h.yrev && h.mine && kstDay(Math.floor(h.rid / 1000)) === day);
+    const cnt = (id) => today.filter((h) => h.mine === id).length;
+    return { tday: last, list, cnt, today, done: !list.length || list.every((m) => cnt(m.id) >= 1), left: (G.yrevQueue || []).length };
+  }
+  function startYrev(ids, rep) {
+    const yv = yrevState(todayKst());
+    G.yrevQueue = [].concat(...Array.from({ length: rep || 1 }, () => ids)); G.yrevDay = yv.tday; G.drillActive = null; saveG();
+    const go = () => { const r = G.round; if (r && !r.done) { if (!confirm('지금 하던 종목을 끝내고 어제 매매 복기를 시작할까요?')) { G.yrevQueue = []; saveG(); return; } endRound(`${r.turn}턴에서 넘김`); } $('gResult').style.display = 'none'; startRound(); };
+    if ($('gHome').style.display !== 'none') enterGame().then(() => go()); else go();
+    closeModals();
+  }
   function routine() {
     const day = todayKst();
     G.routine = G.routine || {};
     const r = G.routine[day] = G.routine[day] || { drill: null, rounds: [] };
     const drillRounds = G.rounds.filter((h) => h.drill && r.rounds.includes(h.rid));
     const weeklyDue = !G.weeklyAt || (Date.parse(day) - Date.parse(G.weeklyAt)) / 86400000 >= 7;
-    return { day, r, s1: !!(G.daily && G.daily[day] && G.daily[day].done), drillRounds, s2: drillRounds.length >= DRILL_N, s3: drillRounds.length >= DRILL_N && drillRounds.every((h) => h.note), weeklyDue };
+    const yv = yrevState(day);
+    return { day, r, yv, sY: yv.done, s1: !!(G.daily && G.daily[day] && G.daily[day].done), drillRounds, s2: drillRounds.length >= DRILL_N, s3: drillRounds.length >= DRILL_N && drillRounds.every((h) => h.note), weeklyDue };
   }
   const baseOnRoundStart = onRoundStart;
   onRoundStart = function (r) {
     baseOnRoundStart(r);
-    if (G.drillActive && !r.daily) { r.drill = G.drillActive; const ro = routine(); if (!ro.r.rounds.includes(r.id)) ro.r.rounds.push(r.id); }
+    if (G.drillActive && !r.daily && !r.yrev) { r.drill = G.drillActive; const ro = routine(); if (!ro.r.rounds.includes(r.id)) ro.r.rounds.push(r.id); }
   };
   function startDrill(key) {
     const ro = routine();
@@ -1917,6 +1942,7 @@
     let el = $('gDrillBar');
     if (!el) { el = document.createElement('div'); el.id = 'gDrillBar'; $('chartRow').appendChild(el); }
     const r = G && G.round, d = r && r.drill && DRILLS[r.drill];
+    if (r && r.yrev && !r.done) { el.style.display = 'flex'; el.innerHTML = `<b>🔁 어제 매매 복기</b> <span class="dim">${r.yrev} 실전의 나(👻)와 같은 자리에서 · 남은 판 ${(G.yrevQueue || []).length}</span>`; return; }
     if (!d || r.done) { el.style.display = 'none'; return; }
     const ro = routine();
     el.style.display = 'flex';
@@ -1937,7 +1963,9 @@
         `<div style="display:flex; gap:6px; margin-top:6px"><input id="gNote" maxlength="80" placeholder="한 줄 복기: 실전의 나(👻)와 비교해서 다음엔?" value="${(h.note || '').replace(/"/g, '&quot;')}" style="flex:1"><button id="gNoteSave">저장</button></div>`;
     }
     const ro = routine();
-    const next = !ro.s1 ? '① 오늘의 차트' : !ro.s2 ? `② 훈련 ${Math.min(DRILL_N, ro.drillRounds.length + 1)}/${DRILL_N}판` : !ro.s3 ? '③ 훈련 판 한 줄 복기' : ro.weeklyDue ? '④ 주간 점검' : '오늘 루틴 끝 🎉';
+    if (h.yrev) html += `<div><b>🔁 어제 매매 복기</b> <span class="dim">${h.yrev} · ${(G.yrevQueue || []).length ? `남은 판 ${G.yrevQueue.length} → [다음종목]으로 이어서` : '줄에 남은 판 없음 (루틴에서 또 반복할 수 있어요)'}</span></div>` +
+      `<div style="display:flex; gap:6px; margin-top:6px"><input id="gNote" maxlength="80" placeholder="한 줄 복기: 실전의 나(👻)와 뭐가 달랐나?" value="${(h.note || '').replace(/"/g, '&quot;')}" style="flex:1"><button id="gNoteSave">저장</button></div>`;
+    const next = !ro.s1 ? '① 오늘의 차트' : !ro.sY ? '② 어제 매매 복기' : !ro.s2 ? `③ 훈련 ${Math.min(DRILL_N, ro.drillRounds.length + 1)}/${DRILL_N}판` : !ro.s3 ? '④ 훈련 판 한 줄 복기' : ro.weeklyDue ? '⑤ 주간 점검' : '오늘 루틴 끝 🎉';
     html += `<div class="dim" style="margin-top:8px">오늘의 루틴 · 다음: <b style="color:#fff">${next}</b> <button id="gToRoutine" style="margin-left:6px">루틴 보기</button></div>`;
     box.innerHTML = html;
     const btns = $('gResBody').querySelector('#gResNext').parentElement;
@@ -1950,21 +1978,33 @@
   // 루틴 창
   const rtBox = document.createElement('div'); rtBox.id = 'gRoutine'; rtBox.className = 'gmodal'; document.body.appendChild(rtBox);
   rtBox.addEventListener('click', (e) => { if (e.target === rtBox) rtBox.style.display = 'none'; });
+  function yrevBody(yv) {
+    if (!yv.list.length) return mine && mine.rounds && mine.rounds.length ? '최근 7일 안에 복기할 내 매매가 없어요 (시총 큰 종목·아직 차트가 다 안 지난 매매는 빠져요).' : '이 컴퓨터엔 내 매매 판이 없어요.';
+    const hm = (x) => origFmt(x).slice(11, 16);
+    return `<div style="margin-top:2px">${yv.tday} 매매 ${yv.list.length}건 · 오늘 ${yv.today.length}판 했어요. 결과를 알고 다시 해도 괜찮아요. 같은 자리에서 어떻게 다르게 할지를 연습해요.</div>` +
+      yv.list.map((m) => { const t = m.trade, L = t.side === 'long';
+        return `<div style="display:flex; gap:6px; align-items:center; margin-top:4px"><span style="flex:1"><b>${m.short}</b> <span class="${L ? 'up' : 'down'}">${L ? '롱' : '숏'}</span> ${hm(t.open)}→${hm(t.close)} · 실전 <b class="${cls(t.pnl)}">${usdS(t.pnl)}</b> · 오늘 ${yv.cnt(m.id)}번</span><button data-yrev="${m.id}">▶ 다시</button></div>`; }).join('') +
+      `<div style="display:flex; gap:6px; align-items:center; margin-top:8px"><button id="rtYAll" class="rec">▶ 전부 이어서</button><select id="rtYRep" style="background:#1f1f22; color:#e4e4e7; border:1px solid #3a3a40; border-radius:6px; padding:4px"><option value="1">1번씩</option><option value="2">2번씩</option><option value="3" selected>3번씩</option><option value="5">5번씩</option></select>` +
+      `${yv.left ? `<span class="dim">남은 판 ${yv.left}</span>` : ''}</div>`;
+  }
   function openRoutine() {
     const ro = routine(), rec = ro.r.drill || recommendDrill();
     const step = (n, done, title, body) => `<div class="rstep ${done ? 'done' : ''}"><div class="rn">${done ? '✓' : n}</div><div style="flex:1"><b>${title}</b><div class="dim" style="font-size:12px; margin-top:2px">${body}</div></div></div>`;
     const notes = ro.drillRounds.map((h, i) => `<div style="display:flex; gap:6px; align-items:center; margin-top:4px"><span class="dim" style="width:150px">${i + 1}판 · ${h.name} · ${h.drillScore == null ? '관망' : h.drillScore + '점'}</span><input data-rid="${h.rid}" maxlength="80" value="${(h.note || '').replace(/"/g, '&quot;')}" placeholder="한 줄 복기" style="flex:1"></div>`).join('');
     rtBox.innerHTML = `<div class="gm" style="width:560px"><div class="gmh"><b>📋 오늘의 루틴 (15~20분)</b><button data-x>닫기 (Esc)</button></div>` +
       step(1, ro.s1, '① 준비 1판: 오늘의 차트', ro.s1 ? `끝 (${f1(G.daily[ro.day].pct || 0)}%)` : `<button id="rtDaily">오늘의 차트 하기</button>`) +
-      step(2, ro.s2, `② 훈련 ${DRILL_N}판: 한 가지만`, `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px">${Object.entries(DRILLS).map(([k, d]) => `<button data-drill="${k}" class="${k === rec ? 'rec' : ''}">${d.name}${k === recommendDrill() ? ' · 추천' : ''}</button>`).join('')}</div>` +
+      step(2, ro.sY, '② 어제 매매 복기: 같은 차트를 다시, 여러 번', yrevBody(ro.yv)) +
+      step(3, ro.s2, `③ 훈련 ${DRILL_N}판: 한 가지만`, `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px">${Object.entries(DRILLS).map(([k, d]) => `<button data-drill="${k}" class="${k === rec ? 'rec' : ''}">${d.name}${k === recommendDrill() ? ' · 추천' : ''}</button>`).join('')}</div>` +
         `<div style="margin-top:4px">${ro.drillRounds.length}/${DRILL_N}판 했어요${ro.r.drill ? ` · 오늘 훈련: ${DRILLS[ro.r.drill].name}` : ''}. 한 주 동안 같은 훈련을 반복하는 게 좋아요.</div>`) +
-      step(3, ro.s3, '③ 복기 1분씩: 실전의 나(👻)와 비교하고 한 줄', ro.drillRounds.length ? notes : '훈련 판을 하면 여기에 판마다 한 줄 칸이 생겨요.') +
-      step(4, !ro.weeklyDue, '④ 주 1회: 훈련 점수 · 실전 숫자 보기', ro.weeklyDue ? `<button id="rtWeekly">주간 점검 열기</button>` : `이번 주 했어요 (${G.weeklyAt})`) +
+      step(4, ro.s3, '④ 복기 1분씩: 실전의 나(👻)와 비교하고 한 줄', ro.drillRounds.length ? notes : '훈련 판을 하면 여기에 판마다 한 줄 칸이 생겨요.') +
+      step(5, !ro.weeklyDue, '⑤ 주 1회: 훈련 점수 · 실전 숫자 보기', ro.weeklyDue ? `<button id="rtWeekly">주간 점검 열기</button>` : `이번 주 했어요 (${G.weeklyAt})`) +
       `<div class="dim" style="font-size:11.5px; margin-top:8px">추천 훈련 = 최근 매매 20건에서 가장 약한 항목. 점수: 과정(스탑·익절·손익비 1.2·−1R 안·원칙) + 결과(R).</div></div>`;
     rtBox.style.display = 'flex';
     rtBox.querySelector('[data-x]').onclick = () => { rtBox.style.display = 'none'; };
     if ($('rtDaily')) $('rtDaily').onclick = () => { rtBox.style.display = 'none'; $('gHome').style.display !== 'none' ? $('gDaily').click() : startDaily(); };
     rtBox.querySelectorAll('[data-drill]').forEach((b) => b.onclick = () => startDrill(b.dataset.drill));
+    rtBox.querySelectorAll('[data-yrev]').forEach((b) => b.onclick = () => startYrev([b.dataset.yrev], 1));
+    if ($('rtYAll')) $('rtYAll').onclick = () => startYrev(ro.yv.list.map((m) => m.id), +$('rtYRep').value || 1);
     rtBox.querySelectorAll('input[data-rid]').forEach((inp) => inp.onchange = () => { const h = G.rounds.find((x) => String(x.rid) === inp.dataset.rid); if (h) { h.note = inp.value.trim(); saveG(); paintRoutineBtn(); } });
     if ($('rtWeekly')) $('rtWeekly').onclick = () => openWeekly();
   }
@@ -1991,11 +2031,11 @@
   bar.insertBefore(rtBtn, $('gTimerBtn'));
   function paintRoutineBtn() {
     if (!G) return;
-    const ro = routine(), done = [ro.s1, ro.s2, ro.s3, !ro.weeklyDue].filter(Boolean).length;
-    rtBtn.textContent = `📋 오늘의 루틴 ${done}/4`;
-    rtBtn.classList.toggle('on', done === 4);
+    const ro = routine(), done = [ro.s1, ro.sY, ro.s2, ro.s3, !ro.weeklyDue].filter(Boolean).length;
+    rtBtn.textContent = `📋 오늘의 루틴 ${done}/5`;
+    rtBtn.classList.toggle('on', done === 5);
     const hc = $('gHomeRoutine');
-    if (hc) hc.innerHTML = `📋 오늘의 루틴 ${done}/4 · ${!ro.s1 ? '① 오늘의 차트부터' : !ro.s2 ? `② 훈련 ${ro.drillRounds.length}/${DRILL_N}판` : !ro.s3 ? '③ 한 줄 복기' : ro.weeklyDue ? '④ 주간 점검' : '오늘 끝 🎉'}`;
+    if (hc) hc.innerHTML = `📋 오늘의 루틴 ${done}/5 · ${!ro.s1 ? '① 오늘의 차트부터' : !ro.sY ? `② 어제 매매 복기 (${ro.yv.list.length}건)` : !ro.s2 ? `③ 훈련 ${ro.drillRounds.length}/${DRILL_N}판` : !ro.s3 ? '④ 한 줄 복기' : ro.weeklyDue ? '⑤ 주간 점검' : '오늘 끝 🎉'}`;
   }
   { const go = $('gGo'); const hb = document.createElement('button'); hb.className = 'go2'; hb.id = 'gHomeRoutine'; hb.style.cssText = 'background:#2c2c31; border:1px solid #52525b'; hb.onclick = () => openRoutine(); go.before(hb); }
   const baseRenderPosR = renderPos;
@@ -2098,6 +2138,10 @@
   (async () => {
     try { index = JSON.parse(await fetchText('data/game/index.json')); } catch (e) { index = null; }
     try { mine = JSON.parse(await fetchText('data/game/my_index.json')); } catch (e) { mine = null; }   // 없으면 원래 30종목만
+    fetch('api/refresh-mine', { cache: 'no-store' }).then((x) => (x.ok ? x.json() : null)).then(async (j) => {   // 어제 매매까지 판으로 (2026-11-28)
+      if (!j || !j.ok) return;
+      try { mine = JSON.parse(await fetchText('data/game/my_index.json?t=' + Date.now())); paintRoutineBtn(); } catch (e) {}
+    }).catch(() => {});
     if (mine && mine.rounds && mine.rounds.length) $('gHomeNote').innerHTML += `<br>🔁 내가 매매한 차트 ${mine.rounds.length}판만 나와요 (모든 판에 그때 실전의 나 👻 고스트 · 아직 안 한 판 ${mineLeft().length}개)`;
     if (!index || !index.coins || !index.coins.length) {
       $('gGo').disabled = true; $('gDaily').disabled = true;
